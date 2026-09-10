@@ -28,7 +28,7 @@ interface RegisterModalProps {
 export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [quoteVisible, setQuoteVisible] = useState(true);
-  const modalRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { events, site } = content;
 
   // Rotate quotes every 5 seconds
@@ -54,14 +54,35 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isOpen, onClose]);
 
-  // Lock body scroll when modal is open
+  // Stop Lenis + lock body scroll when modal is open
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    if (!isOpen) return;
+
+    // Lock body scroll
+    document.body.style.overflow = 'hidden';
+
+    // Stop Lenis smooth scrolling so the modal can scroll freely
+    const lenisStopEvent = new CustomEvent('lenis-stop');
+    window.dispatchEvent(lenisStopEvent);
+
+    // Capture wheel events on the modal to prevent propagation to Lenis
+    const container = scrollContainerRef.current;
+    const preventLenisScroll = (e: WheelEvent) => {
+      e.stopPropagation();
+    };
+
+    if (container) {
+      container.addEventListener('wheel', preventLenisScroll, { passive: false });
     }
-    return () => { document.body.style.overflow = ''; };
+
+    return () => {
+      document.body.style.overflow = '';
+      const lenisStartEvent = new CustomEvent('lenis-start');
+      window.dispatchEvent(lenisStartEvent);
+      if (container) {
+        container.removeEventListener('wheel', preventLenisScroll);
+      }
+    };
   }, [isOpen]);
 
   // Click outside to close
@@ -76,7 +97,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4"
       onClick={handleBackdropClick}
       style={{
         animation: 'modal-fade-in 0.3s ease-out forwards',
@@ -92,33 +113,39 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
         }}
       />
 
-      {/* Modal content */}
+      {/* Modal scroll container — traps scroll inside */}
       <div
-        ref={modalRef}
-        className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl"
+        ref={scrollContainerRef}
+        className="relative w-full max-w-5xl max-h-[92vh] rounded-2xl"
         style={{
           animation: 'modal-scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
           background: 'rgba(10, 10, 14, 0.95)',
           border: '1px solid rgba(212, 175, 122, 0.15)',
           boxShadow: '0 0 80px rgba(212, 175, 122, 0.08), 0 40px 120px rgba(0, 0, 0, 0.6)',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="cursor-interact absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center rounded-full transition-all duration-300 hover:scale-110"
-          style={{
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(245,243,238,0.6)',
-          }}
-          aria-label="Close registration modal"
-        >
-          <LucideIcons.X className="w-5 h-5" />
-        </button>
+        {/* Close button — sticky */}
+        <div className="sticky top-0 z-20 flex justify-end p-3 sm:p-4 pointer-events-none">
+          <button
+            onClick={onClose}
+            className="cursor-interact pointer-events-auto w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full transition-all duration-300 hover:scale-110 hover:rotate-90"
+            style={{
+              background: 'rgba(10,10,14,0.8)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(245,243,238,0.6)',
+            }}
+            aria-label="Close registration modal"
+          >
+            <LucideIcons.X className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+        </div>
 
         {/* ─── Trophy + Prize Pool Section ─── */}
-        <div className="relative pt-10 pb-6 px-6 text-center overflow-hidden">
+        <div className="relative pb-6 px-6 text-center overflow-hidden -mt-6">
           {/* Background glow */}
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-40 pointer-events-none"
@@ -171,7 +198,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
         <div className="relative px-6 py-4 text-center">
           <div className="max-w-lg mx-auto min-h-[3rem] flex items-center justify-center">
             <p
-              className="font-serif text-sm sm:text-base italic transition-all duration-400"
+              className="font-serif text-sm sm:text-base italic"
               style={{
                 color: 'rgba(245,243,238,0.35)',
                 opacity: quoteVisible ? 1 : 0,
@@ -196,28 +223,39 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
         {/* ─── 4×2 Event Grid ─── */}
         <div className="px-4 sm:px-6 md:px-8 py-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {events.map((event) => {
+            {events.map((event, index) => {
               // @ts-expect-error dynamic icon lookup
               const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
 
               return (
                 <div
                   key={event.id}
-                  className="group relative rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02]"
+                  className="register-grid-card group relative rounded-xl overflow-hidden"
                   style={{
                     background: 'rgba(255,255,255,0.025)',
                     border: `1px solid ${event.colorHex}15`,
                     boxShadow: `0 2px 12px rgba(0,0,0,0.2)`,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = `${event.colorHex}40`;
-                    e.currentTarget.style.boxShadow = `0 8px 32px rgba(0,0,0,0.3), 0 0 20px ${event.colorHex}15`;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = `${event.colorHex}15`;
-                    e.currentTarget.style.boxShadow = `0 2px 12px rgba(0,0,0,0.2)`;
+                    animationDelay: `${index * 0.15}s`,
+                    // CSS custom properties for the accent color
+                    ['--card-accent' as string]: event.colorHex,
                   }}
                 >
+                  {/* Hover glow border effect */}
+                  <div
+                    className="absolute inset-0 rounded-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                    style={{
+                      boxShadow: `inset 0 0 0 1px ${event.colorHex}50, 0 0 30px ${event.colorHex}15, 0 0 60px ${event.colorHex}08`,
+                    }}
+                  />
+
+                  {/* Top edge glow line */}
+                  <div
+                    className="absolute top-0 left-[15%] right-[15%] h-[1px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                    style={{
+                      background: `linear-gradient(90deg, transparent, ${event.colorHex}80, transparent)`,
+                    }}
+                  />
+
                   {/* Event image */}
                   <div className="relative h-28 sm:h-32 overflow-hidden">
                     <Image
@@ -225,7 +263,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
                       alt={event.title}
                       fill
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                      className="object-cover transition-transform duration-700 group-hover:scale-110"
                     />
                     {/* Gradient overlay */}
                     <div
@@ -236,34 +274,40 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
                     />
                     {/* Accent color tint on hover */}
                     <div
-                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-400"
+                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
                       style={{
-                        background: `linear-gradient(135deg, ${event.colorHex}15, transparent)`,
+                        background: `linear-gradient(135deg, ${event.colorHex}20, transparent)`,
                       }}
                     />
                     {/* Badge */}
                     <div
-                      className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+                      className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 group-hover:scale-110"
                       style={{
                         background: 'rgba(5,5,6,0.6)',
                         backdropFilter: 'blur(8px)',
                         border: `1px solid ${event.colorHex}30`,
                       }}
                     >
-                      <Icon className="w-3.5 h-3.5" style={{ color: event.colorHex }} strokeWidth={1.5} />
+                      <Icon
+                        className="w-3.5 h-3.5 transition-all duration-300"
+                        style={{
+                          color: event.colorHex,
+                        }}
+                        strokeWidth={1.5}
+                      />
                     </div>
                   </div>
 
                   {/* Card content */}
                   <div className="p-3 sm:p-4">
                     <h4
-                      className="font-serif text-sm sm:text-base font-bold mb-1 line-clamp-1"
-                      style={{ color: '#F5F3EE' }}
+                      className="font-serif text-sm sm:text-base font-bold mb-1 line-clamp-1 transition-colors duration-300 group-hover:text-white"
+                      style={{ color: 'rgba(245,243,238,0.85)' }}
                     >
                       {event.title}
                     </h4>
                     <p
-                      className="text-[10px] sm:text-[11px] font-mono tracking-wider uppercase mb-3 line-clamp-1"
+                      className="text-[10px] sm:text-[11px] font-mono tracking-wider uppercase mb-3 line-clamp-1 transition-colors duration-300"
                       style={{ color: `${event.colorHex}80` }}
                     >
                       {event.tags.slice(0, 3).join(' · ')}

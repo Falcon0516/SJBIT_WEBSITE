@@ -46,8 +46,16 @@ export default function SmoothScrollProvider({ children }: SmoothScrollProviderP
     gsap.ticker.add(tickerHandler);
     gsap.ticker.lagSmoothing(500, 33); // Keep lag smoothing enabled to prevent frame hitching
 
+    // Listen for modal stop/start events
+    const handleStop = () => lenis.stop();
+    const handleStart = () => lenis.start();
+    window.addEventListener('lenis-stop', handleStop);
+    window.addEventListener('lenis-start', handleStart);
+
     return () => {
       gsap.ticker.remove(tickerHandler);
+      window.removeEventListener('lenis-stop', handleStop);
+      window.removeEventListener('lenis-start', handleStart);
       lenis.destroy();
       lenisRef.current = null;
     };

@@ -159,8 +159,8 @@ export default function EventsSection() {
 
       {/* ─── Carousel Helper Text ─── */}
       <p
-        className="text-center font-mono text-[11px] sm:text-xs tracking-wider -mt-4 sm:-mt-8 mb-8 sm:mb-12"
-        style={{ color: 'rgba(212,175,122,0.35)' }}
+        className="relative z-10 text-center font-mono text-[11px] sm:text-xs tracking-wider mt-6 sm:mt-8 mb-8 sm:mb-12 px-4"
+        style={{ color: 'rgba(212,175,122,0.4)' }}
       >
         Click on any card to know more about the event
       </p>

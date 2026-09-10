@@ -220,3 +220,23 @@ summary,
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
 }
+
+/* ─── Register Grid Card Wave Bounce ─── */
+@keyframes wave-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.register-grid-card {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.4s ease,
+              border-color 0.4s ease;
+  animation: wave-bounce 3s ease-in-out infinite;
+}
+
+.register-grid-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35),
+              0 0 25px var(--card-accent, rgba(212,175,122,0.15));
+  border-color: var(--card-accent, rgba(212,175,122,0.3)) !important;
+}
