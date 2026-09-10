@@ -37,7 +37,7 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // Draw a specific frame to the canvas with object-fit: cover math
+  // Draw a specific frame to the canvas with responsive portrait fit / landscape cover
   const drawFrame = useCallback((frameIndex: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -50,15 +50,51 @@ export default function HeroScrub() {
     const { width: cw, height: ch } = canvas;
     const { naturalWidth: iw, naturalHeight: ih } = img;
 
-    // Cover-fit calculation
-    const scale = Math.max(cw / iw, ch / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = (cw - dw) / 2;
-    const dy = (ch - dh) / 2;
+    const isPortrait = ch > cw;
 
     ctx.clearRect(0, 0, cw, ch);
-    ctx.drawImage(img, dx, dy, dw, dh);
+
+    if (isPortrait) {
+      // In portrait orientation (mobile/tablet), fit the full 16:9 width so all
+      // 3D event monoliths (left, center, right) remain 100% visible and uncropped.
+      const scale = cw / iw;
+      const dw = cw;
+      const dh = ih * scale;
+      const dx = 0;
+      const dy = (ch - dh) / 2;
+
+      // Base background fill
+      ctx.fillStyle = '#050506';
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Draw fitted image
+      ctx.drawImage(img, dx, dy, dw, dh);
+
+      // Subtle edge feathering at top and bottom to seamlessly blend into background
+      const fadeH = Math.min(32, dh * 0.15);
+
+      const topGrad = ctx.createLinearGradient(0, dy, 0, dy + fadeH);
+      topGrad.addColorStop(0, '#050506');
+      topGrad.addColorStop(1, 'rgba(5, 5, 6, 0)');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(0, dy - 1, cw, fadeH + 1);
+
+      const btmGrad = ctx.createLinearGradient(0, dy + dh - fadeH, 0, dy + dh);
+      btmGrad.addColorStop(0, 'rgba(5, 5, 6, 0)');
+      btmGrad.addColorStop(1, '#050506');
+      ctx.fillStyle = btmGrad;
+      ctx.fillRect(0, dy + dh - fadeH, cw, fadeH + 1);
+    } else {
+      // Landscape: full bleed cover
+      const scale = Math.max(cw / iw, ch / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = (cw - dw) / 2;
+      const dy = (ch - dh) / 2;
+
+      ctx.drawImage(img, dx, dy, dw, dh);
+    }
+
     currentFrameRef.current = frameIndex;
   }, []);
 
@@ -153,12 +189,12 @@ export default function HeroScrub() {
   // ─── Reduced Motion Fallback ───
   if (prefersReducedMotion) {
     return (
-      <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden">
+      <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden flex items-center justify-center">
         <Image
           src="/images/hero-poster.jpg"
           alt="SJBIT Campus"
           fill
-          className="object-cover"
+          className="object-contain md:object-cover"
           priority
         />
         <div className="absolute inset-0 bg-black/50" />
@@ -173,6 +209,9 @@ export default function HeroScrub() {
       className="relative w-full bg-[#050506] h-[300vh] md:h-[500vh]"
     >
       <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden">
+        {/* Ambient gold glow behind portrait canvas */}
+        <div className="ambient-blob ambient-blob-gold w-[320px] h-[320px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-25" />
+
         {/* Poster placeholder until first frame loads */}
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${
@@ -183,7 +222,7 @@ export default function HeroScrub() {
             src="/images/hero-poster.jpg"
             alt="Loading..."
             fill
-            className="object-cover blur-sm"
+            className="object-contain md:object-cover blur-sm"
             priority
           />
         </div>
