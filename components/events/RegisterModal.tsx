@@ -144,63 +144,106 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
           </button>
         </div>
 
-        {/* ─── Trophy + Prize Pool Section ─── */}
-        <div className="relative pb-6 px-6 text-center overflow-hidden -mt-6">
+        {/* ─── Trophy + Prize Pool Section (Inline) ─── */}
+        <div className="relative pb-4 px-6 overflow-hidden -mt-6">
           {/* Background glow */}
           <div
-            className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-40 pointer-events-none"
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-48 pointer-events-none"
             style={{
-              background: 'radial-gradient(ellipse, rgba(212,175,122,0.12) 0%, transparent 70%)',
-              filter: 'blur(40px)',
+              background: 'radial-gradient(ellipse, rgba(212,175,122,0.1) 0%, transparent 70%)',
+              filter: 'blur(50px)',
             }}
           />
 
-          {/* Trophy icon */}
-          <div
-            className="relative inline-flex items-center justify-center w-20 h-20 rounded-full mb-4"
-            style={{
-              background: 'linear-gradient(135deg, rgba(212,175,122,0.15), rgba(212,175,122,0.05))',
-              border: '1px solid rgba(212,175,122,0.25)',
-              animation: 'trophy-glow 3s ease-in-out infinite',
-            }}
-          >
-            <LucideIcons.Trophy
-              className="w-10 h-10"
-              strokeWidth={1.5}
-              style={{ color: '#D4AF7A' }}
-            />
-          </div>
+          {/* Inline row: Trophy + Prize */}
+          <div className="relative flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 md:gap-8">
+            {/* Premium Trophy */}
+            <div
+              className="relative flex-shrink-0"
+              style={{ animation: 'trophy-glow 3s ease-in-out infinite' }}
+            >
+              {/* Outer ring */}
+              <div
+                className="w-[72px] h-[72px] sm:w-[88px] sm:h-[88px] rounded-full flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(212,175,122,0.2), rgba(184,150,90,0.08))',
+                  border: '2px solid rgba(212,175,122,0.3)',
+                  boxShadow: '0 0 40px rgba(212,175,122,0.12), inset 0 0 20px rgba(212,175,122,0.06)',
+                }}
+              >
+                {/* Inner glow circle */}
+                <div
+                  className="w-[56px] h-[56px] sm:w-[68px] sm:h-[68px] rounded-full flex items-center justify-center"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(245,230,200,0.12), rgba(212,175,122,0.05))',
+                    border: '1px solid rgba(212,175,122,0.2)',
+                  }}
+                >
+                  <LucideIcons.Trophy
+                    className="w-7 h-7 sm:w-9 sm:h-9"
+                    strokeWidth={1.8}
+                    style={{
+                      color: '#D4AF7A',
+                      filter: 'drop-shadow(0 0 6px rgba(212,175,122,0.5))',
+                    }}
+                  />
+                </div>
+              </div>
+              {/* Sparkle dots */}
+              <div
+                className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
+                style={{
+                  background: '#F5E6C8',
+                  boxShadow: '0 0 8px 2px rgba(245,230,200,0.6)',
+                  animation: 'pulse-glow 2s ease-in-out infinite',
+                }}
+              />
+              <div
+                className="absolute bottom-1 -left-1 w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: '#D4AF7A',
+                  boxShadow: '0 0 6px 2px rgba(212,175,122,0.5)',
+                  animation: 'pulse-glow 2s ease-in-out infinite 0.8s',
+                }}
+              />
+            </div>
 
-          {/* Prize amount */}
-          <div className="relative">
-            <h2
-              className="font-serif text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight"
-              style={{
-                background: 'linear-gradient(90deg, #D4AF7A 0%, #F5E6C8 30%, #D4AF7A 50%, #B8965A 70%, #D4AF7A 100%)',
-                backgroundSize: '200% auto',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                animation: 'prize-shimmer 4s linear infinite',
-              }}
-            >
-              {site.prizePoolDisplay}+
-            </h2>
-            <p
-              className="font-mono text-xs tracking-[0.3em] uppercase mt-2"
-              style={{ color: 'rgba(212,175,122,0.5)' }}
-            >
-              Total Prize Pool
-            </p>
+            {/* Prize amount + label */}
+            <div className="text-center sm:text-left">
+              <h2
+                className="font-serif text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-none"
+                style={{
+                  background: 'linear-gradient(90deg, #D4AF7A 0%, #F5E6C8 30%, #D4AF7A 50%, #B8965A 70%, #D4AF7A 100%)',
+                  backgroundSize: '200% auto',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  animation: 'prize-shimmer 4s linear infinite',
+                }}
+              >
+                {site.prizePoolDisplay}+
+              </h2>
+              <p
+                className="font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase mt-1.5"
+                style={{ color: 'rgba(212,175,122,0.45)' }}
+              >
+                Total Prize Pool
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* ─── Dynamic Quote ─── */}
-        <div className="relative px-6 py-4 text-center">
-          <div className="max-w-lg mx-auto min-h-[3rem] flex items-center justify-center">
+        {/* ─── Dynamic Quote (Silver Bright) ─── */}
+        <div className="relative px-6 sm:px-10 py-5 text-center">
+          <div className="max-w-2xl mx-auto min-h-[4rem] flex items-center justify-center">
             <p
-              className="font-serif text-sm sm:text-base italic"
+              className="font-serif text-base sm:text-lg md:text-xl italic leading-relaxed"
               style={{
-                color: 'rgba(245,243,238,0.35)',
+                background: 'linear-gradient(90deg, #B8C4D4 0%, #E8EDF4 25%, #FFFFFF 50%, #E8EDF4 75%, #B8C4D4 100%)',
+                backgroundSize: '200% auto',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                animation: 'prize-shimmer 6s linear infinite',
+                filter: 'drop-shadow(0 0 12px rgba(200, 215, 235, 0.25))',
                 opacity: quoteVisible ? 1 : 0,
                 transform: quoteVisible ? 'translateY(0)' : 'translateY(-8px)',
                 transition: 'opacity 0.4s ease, transform 0.4s ease',
@@ -211,11 +254,11 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
           </div>
           {/* Divider */}
           <div
-            className="mt-4 mx-auto"
+            className="mt-5 mx-auto"
             style={{
-              width: '60px',
+              width: '80px',
               height: '1px',
-              background: 'linear-gradient(90deg, transparent, rgba(212,175,122,0.3), transparent)',
+              background: 'linear-gradient(90deg, transparent, rgba(200,215,235,0.3), transparent)',
             }}
           />
         </div>
