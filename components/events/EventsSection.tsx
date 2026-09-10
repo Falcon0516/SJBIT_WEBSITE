@@ -130,6 +130,7 @@ export default function EventsSection() {
                     src={`/images/events/${event.slug}.jpg`}
                     alt={event.title}
                     fill
+                    sizes="(max-width: 640px) 140px, (max-width: 768px) 180px, 240px"
                     className="object-cover"
                     style={{ opacity: 0.6 }}
                   />
@@ -180,6 +181,7 @@ export default function EventsSection() {
                       src={`/images/events/${event.slug}.jpg`}
                       alt={event.title}
                       fill
+                      sizes="(max-width: 768px) 100vw, 50vw"
                       className="object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     {/* Color overlay on hover */}
