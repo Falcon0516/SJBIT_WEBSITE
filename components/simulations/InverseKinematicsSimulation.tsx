@@ -337,14 +337,14 @@ export default function InverseKinematicsSimulation({ color }: SimulationProps) 
          ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
          if (node.active) {
             ctx.fillStyle = '#ffffff';
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1)`;
+            // shadowBlur removed for perf
+            // shadowColor removed for perf
          } else if (node.welded) {
             ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.8)`;
-            ctx.shadowBlur = 0;
+            // shadowBlur removed for perf
          } else {
             ctx.fillStyle = `rgba(255, 255, 255, 0.1)`;
-            ctx.shadowBlur = 0;
+            // shadowBlur removed for perf
          }
          ctx.fill();
          
@@ -353,7 +353,7 @@ export default function InverseKinematicsSimulation({ color }: SimulationProps) 
          ctx.strokeStyle = node.welded ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.2)` : `rgba(255, 255, 255, 0.02)`;
          ctx.stroke();
       }
-      ctx.shadowBlur = 0;
+      // shadowBlur removed for perf
 
       // Draw Arms
       for (const arm of arms) {

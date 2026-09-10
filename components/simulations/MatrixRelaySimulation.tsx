@@ -273,8 +273,8 @@ export default function MatrixRelaySimulation({ color }: SimulationProps) {
             if (ch.highlight > 0) {
                colorStr = '#ffffff';
                // Head glow
-               ctx.shadowBlur = 10;
-               ctx.shadowColor = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1)`;
+               // shadowBlur removed for perf
+               // shadowColor removed for perf
             } else if (ch.isKeyword) {
                // Make keywords stand out slightly with the theme color
                colorStr = `rgba(${Math.min(rgb[0]+50, 255)}, ${Math.min(rgb[1]+50, 255)}, ${Math.min(rgb[2]+50, 255)}, ${alpha + 0.2})`;
@@ -282,7 +282,7 @@ export default function MatrixRelaySimulation({ color }: SimulationProps) {
 
             ctx.fillStyle = colorStr;
             ctx.fillText(ch.char, col.x, ch.y);
-            ctx.shadowBlur = 0; // reset
+            // shadowBlur removed for perf // reset
          }
       }
 
@@ -306,10 +306,10 @@ export default function MatrixRelaySimulation({ color }: SimulationProps) {
             ctx.fillStyle = '#ffffff';
             ctx.fill();
             
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = pColor.replace(', ', ')').replace('rgba', 'rgb');
+            // shadowBlur removed for perf
+            // shadowColor removed for perf
             ctx.fill();
-            ctx.shadowBlur = 0;
+            // shadowBlur removed for perf
          }
       }
 

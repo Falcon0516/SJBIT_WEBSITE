@@ -312,13 +312,12 @@ export default function CellularAutomataSimulation({ color }: SimulationProps) {
       const cx = width / 2;
       const cy = height / 2;
       
-      const coreGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 100);
-      coreGlow.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.2)`);
-      coreGlow.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
-      ctx.fillStyle = coreGlow;
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
       ctx.beginPath();
       ctx.arc(cx, cy, 100, 0, Math.PI*2);
       ctx.fill();
+      ctx.globalAlpha = 1;
 
       drawHex(ctx, cx, cy, HEX_SIZE * 3);
       ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.5)`;

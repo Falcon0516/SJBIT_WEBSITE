@@ -66,7 +66,7 @@ function distance(a: Vector2D, b: Vector2D): number {
 }
 
 // --- Configuration Constants ---
-const NUM_NODES = 120;
+const NUM_NODES = 50;
 const MAX_SPEED = 2.5;
 const PERCEPTION_RADIUS = 150;
 const CONNECTION_DISTANCE = 180;
@@ -354,27 +354,19 @@ export default function NeuralSimulation({ color }: SimulationProps) {
       const { nodes, synapses, signals, shockwaves, width, height, rgb, time } = state;
       ctx.clearRect(0, 0, width, height);
 
+      // Batch synapse lines
       ctx.lineWidth = 1;
+      ctx.beginPath();
       for (const syn of synapses) {
         if (syn.source.id > syn.target.id) {
-           const act = (syn.source.activity + syn.target.activity) / 2;
-           const alpha = (syn.strength * 0.15) + (act * 0.3);
-           ctx.beginPath();
            ctx.moveTo(syn.source.pos.x, syn.source.pos.y);
            ctx.lineTo(syn.target.pos.x, syn.target.pos.y);
-           
-           if (act > 0.3) {
-              const grad = ctx.createLinearGradient(syn.source.pos.x, syn.source.pos.y, syn.target.pos.x, syn.target.pos.y);
-              grad.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${syn.source.activity * 0.5})`);
-              grad.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${syn.target.activity * 0.5})`);
-              ctx.strokeStyle = grad;
-           } else {
-              ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
-           }
-           ctx.stroke();
         }
       }
+      ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.12)`;
+      ctx.stroke();
 
+      // Shockwaves — simple strokes, no gradients
       for (const sw of shockwaves) {
          const alpha = (1 - sw.age) * sw.intensity * 0.3;
          ctx.beginPath();
@@ -384,34 +376,40 @@ export default function NeuralSimulation({ color }: SimulationProps) {
          ctx.stroke();
       }
 
+      // Signals — simple bright dots instead of radial gradients
       for (const sig of signals) {
          const x = sig.source.pos.x + (sig.target.pos.x - sig.source.pos.x) * sig.progress;
          const y = sig.source.pos.y + (sig.target.pos.y - sig.source.pos.y) * sig.progress;
-         
-         const glow = ctx.createRadialGradient(x, y, 0, x, y, 10);
-         glow.addColorStop(0, `rgba(255, 255, 255, ${sig.intensity})`);
-         glow.addColorStop(0.2, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${sig.intensity * 0.8})`);
-         glow.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
-         
-         ctx.fillStyle = glow;
+
+         ctx.globalAlpha = sig.intensity * 0.3;
+         ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
          ctx.beginPath();
-         ctx.arc(x, y, 10, 0, Math.PI * 2);
+         ctx.arc(x, y, 8, 0, Math.PI * 2);
+         ctx.fill();
+
+         ctx.globalAlpha = sig.intensity;
+         ctx.fillStyle = `rgb(255, 255, 255)`;
+         ctx.beginPath();
+         ctx.arc(x, y, 3, 0, Math.PI * 2);
          ctx.fill();
       }
+      ctx.globalAlpha = 1;
 
+      // Nodes — simple circles, NO radial gradients
       for (const node of nodes) {
          const baseAlpha = 0.2 + node.activity * 0.8;
          const r = node.radius * (1 + node.activity * 0.5);
-         
-         const outerGlow = ctx.createRadialGradient(node.pos.x, node.pos.y, 0, node.pos.x, node.pos.y, r * 4);
-         outerGlow.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${baseAlpha * 0.5})`);
-         outerGlow.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
-         ctx.fillStyle = outerGlow;
+
+         // Outer glow — simple circle
+         ctx.globalAlpha = baseAlpha * 0.2;
+         ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
          ctx.beginPath();
-         ctx.arc(node.pos.x, node.pos.y, r * 4, 0, Math.PI * 2);
+         ctx.arc(node.pos.x, node.pos.y, r * 3, 0, Math.PI * 2);
          ctx.fill();
-         
-         ctx.fillStyle = `rgba(${Math.min(255, rgb[0] + 100)}, ${Math.min(255, rgb[1] + 100)}, ${Math.min(255, rgb[2] + 100)}, ${baseAlpha})`;
+
+         // Core dot
+         ctx.globalAlpha = baseAlpha;
+         ctx.fillStyle = `rgb(${Math.min(255, rgb[0] + 100)}, ${Math.min(255, rgb[1] + 100)}, ${Math.min(255, rgb[2] + 100)})`;
          ctx.beginPath();
          ctx.arc(node.pos.x, node.pos.y, r, 0, Math.PI * 2);
          ctx.fill();
@@ -424,6 +422,7 @@ export default function NeuralSimulation({ color }: SimulationProps) {
             ctx.stroke();
          }
       }
+      ctx.globalAlpha = 1;
     };
 
     const loop = () => {

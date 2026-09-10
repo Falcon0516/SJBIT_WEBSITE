@@ -251,10 +251,10 @@ export default function LSystemTreeSimulation({ color }: SimulationProps) {
          ctx.fill();
          
          // Glow
-         ctx.shadowBlur = 10;
-         ctx.shadowColor = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1)`;
+         // shadowBlur removed for perf
+         // shadowColor removed for perf
          ctx.fill();
-         ctx.shadowBlur = 0;
+         // shadowBlur removed for perf
          
          ctx.restore();
       }
@@ -289,10 +289,10 @@ export default function LSystemTreeSimulation({ color }: SimulationProps) {
          ctx.beginPath();
          ctx.arc(tree.x, tree.y - flow, 4, 0, Math.PI * 2);
          ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.5)`;
-         ctx.shadowBlur = 15;
-         ctx.shadowColor = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1)`;
+         // shadowBlur removed for perf
+         // shadowColor removed for perf
          ctx.fill();
-         ctx.shadowBlur = 0;
+         // shadowBlur removed for perf
       }
 
       if (tree) {
@@ -313,10 +313,10 @@ export default function LSystemTreeSimulation({ color }: SimulationProps) {
          ctx.fill();
          
          if (!leaf.settled) {
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.8)`;
+            // shadowBlur removed for perf
+            // shadowColor removed for perf
             ctx.fill();
-            ctx.shadowBlur = 0;
+            // shadowBlur removed for perf
          }
          
          ctx.restore();

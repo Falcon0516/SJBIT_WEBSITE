@@ -370,22 +370,18 @@ export default function PathfinderSimulation({ color }: SimulationProps) {
          // Decrypting Aura
          if (hunter.state === 'decrypting') {
             const r = CELL_SIZE * (1 + (1 - hunter.timer));
-            const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
-            grad.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${hunter.timer * 0.5})`);
-            grad.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
-            ctx.fillStyle = grad;
+            ctx.globalAlpha = hunter.timer * 0.3;
+            ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
             ctx.beginPath();
             ctx.arc(px, py, r, 0, Math.PI * 2);
             ctx.fill();
+            ctx.globalAlpha = 1;
          }
 
          ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-         ctx.shadowBlur = 15;
-         ctx.shadowColor = ctx.fillStyle;
          ctx.beginPath();
          ctx.arc(px, py, 6, 0, Math.PI * 2);
          ctx.fill();
-         ctx.shadowBlur = 0;
       }
 
       // Draw Particles
