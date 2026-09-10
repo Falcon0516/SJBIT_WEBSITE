@@ -48,6 +48,7 @@ export default function HeroScrub() {
   const campusFramesRef = useRef<HTMLImageElement[]>([]);
   const currentPhaseRef = useRef<'intro' | 'transition' | 'campus'>('intro');
   const activeTimelineIndexRef = useRef(0);
+  const lastProgressRef = useRef(0);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -245,6 +246,7 @@ export default function HeroScrub() {
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
+      drawFrame(lastProgressRef.current);
     };
 
     resizeCanvas();
@@ -263,6 +265,7 @@ export default function HeroScrub() {
       scrub: isMobile ? 0.3 : true,
       onUpdate: (self) => {
         const progress = self.progress;
+        lastProgressRef.current = progress;
 
         // 1. Update overlay beat ONLY when timeline index changes
         const tIndex = timeline.findIndex(
