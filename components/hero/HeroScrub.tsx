@@ -5,7 +5,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import HeroOverlay from './HeroOverlay';
 import Image from 'next/image';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ArrowDown } from 'lucide-react';
 import { content } from '@/lib/content';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -358,6 +358,36 @@ export default function HeroScrub() {
 
         {/* Hero text overlay (updates only when timeline beat changes) */}
         <HeroOverlay activeFrameIndex={activeTimelineIndex} />
+
+        {/* Skip to Events button — bottom right */}
+        <button
+          onClick={() => {
+            const eventsSection = document.getElementById('events');
+            if (eventsSection) eventsSection.scrollIntoView({ behavior: 'smooth' });
+          }}
+          className="cursor-interact absolute bottom-16 sm:bottom-20 right-4 sm:right-8 z-20 group inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-mono tracking-wider uppercase transition-all duration-300 pointer-events-auto"
+          style={{
+            background: 'rgba(5, 5, 6, 0.4)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(212, 175, 122, 0.3)',
+            color: '#D4AF7A',
+            animation: 'float 3s ease-in-out infinite',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(212, 175, 122, 0.15)';
+            e.currentTarget.style.borderColor = 'rgba(212, 175, 122, 0.6)';
+            e.currentTarget.style.boxShadow = '0 0 20px rgba(212, 175, 122, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(5, 5, 6, 0.4)';
+            e.currentTarget.style.borderColor = 'rgba(212, 175, 122, 0.3)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          Skip to Events
+          <ArrowDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform group-hover:translate-y-0.5" />
+        </button>
 
         {/* Bottom scroll cue — direct DOM opacity controlled */}
         <div
