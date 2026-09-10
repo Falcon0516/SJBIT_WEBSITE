@@ -46,7 +46,7 @@ export default function IntroLoader() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.6 }}
-              className="block font-serif text-8xl md:text-9xl tracking-tighter"
+              className="block font-serif text-7xl sm:text-8xl md:text-9xl tracking-tighter"
               style={{ color: '#D4AF7A' }}
             >
               XXV

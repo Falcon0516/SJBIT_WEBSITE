@@ -109,17 +109,17 @@ export default function LegacyReveal() {
       </div>
 
       {/* Emblem Reveal (overlaps the video's end) */}
-      <div className="relative -mt-40 md:-mt-60 pb-24 md:pb-32 flex flex-col items-center text-center px-6">
+      <div className="relative -mt-16 sm:-mt-28 md:-mt-60 pb-16 sm:pb-24 md:pb-32 flex flex-col items-center text-center px-4 sm:px-6">
         <div
           ref={emblemRef}
-          className="relative z-10 mb-12"
+          className="relative z-10 mb-8 sm:mb-12"
           style={{ opacity: prefersReducedMotion ? 1 : (showEmblem ? undefined : 0) }}
         >
           {/* SVG XXV Emblem */}
           <div className="relative">
             <svg
               viewBox="0 0 200 200"
-              className="w-32 h-32 md:w-40 md:h-40 mx-auto"
+              className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 mx-auto"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -153,7 +153,7 @@ export default function LegacyReveal() {
               ))}
             </svg>
             <span
-              className="absolute inset-0 flex items-center justify-center font-serif text-6xl md:text-7xl tracking-tighter"
+              className="absolute inset-0 flex items-center justify-center font-serif text-5xl sm:text-6xl md:text-7xl tracking-tighter"
               style={{ color: '#D4AF7A' }}
             >
               XXV
@@ -161,7 +161,7 @@ export default function LegacyReveal() {
           </div>
 
           <p
-            className="mt-6 font-mono text-xs tracking-[0.3em] uppercase"
+            className="mt-4 sm:mt-6 font-mono text-[11px] sm:text-xs tracking-[0.3em] uppercase"
             style={{ color: 'rgba(212, 175, 122, 0.6)' }}
           >
             Silver Jubilee · Est. 2001
@@ -171,16 +171,16 @@ export default function LegacyReveal() {
         {/* CTA */}
         <div
           ref={ctaRef}
-          className="relative z-10"
+          className="relative z-10 w-full max-w-md sm:max-w-xl mx-auto"
           style={{ opacity: prefersReducedMotion ? 1 : 0 }}
         >
           <h3
-            className="font-serif text-3xl md:text-5xl mb-4"
+            className="font-serif text-2xl sm:text-3xl md:text-5xl mb-3 sm:mb-4 px-2"
             style={{ color: '#F5F3EE' }}
           >
             {site.tagline}
           </h3>
-          <p className="text-lg mb-10 max-w-lg mx-auto" style={{ color: 'rgba(245,243,238,0.5)' }}>
+          <p className="text-sm sm:text-lg mb-8 sm:mb-10 max-w-lg mx-auto px-2" style={{ color: 'rgba(245,243,238,0.5)' }}>
             {site.prizePoolLabel}{' '}
             <span className="font-semibold" style={{ color: '#D4AF7A' }}>
               {site.prizePoolDisplay}
@@ -191,7 +191,7 @@ export default function LegacyReveal() {
             target="_blank"
             rel="noopener noreferrer"
             id="register"
-            className="cursor-interact group inline-flex items-center gap-2 px-10 py-4 rounded-full font-medium text-lg transition-all duration-300"
+            className="cursor-interact group inline-flex items-center justify-center gap-2 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full font-medium text-base sm:text-lg transition-all duration-300 w-full sm:w-auto"
             style={{
               background: '#D4AF7A',
               color: '#050506',

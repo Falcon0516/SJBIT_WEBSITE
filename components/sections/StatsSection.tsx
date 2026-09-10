@@ -72,31 +72,31 @@ export default function StatsSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative py-28 md:py-36 px-6 overflow-hidden"
+      className="relative py-16 sm:py-24 md:py-36 px-4 sm:px-6 overflow-hidden"
     >
       {/* Ambient */}
-      <div className="ambient-blob ambient-blob-gold w-[500px] h-[500px] top-0 left-1/2 -translate-x-1/2" />
+      <div className="ambient-blob ambient-blob-gold w-[320px] sm:w-[500px] h-[320px] sm:h-[500px] top-0 left-1/2 -translate-x-1/2 pointer-events-none" />
 
       <div className="relative z-10 max-w-6xl mx-auto">
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-24">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-8 mb-12 sm:mb-20 md:mb-24">
           {stats.map((stat) => (
-            <div key={stat.label} className="text-center">
+            <div key={stat.label} className="text-center p-2">
               <div className="flex items-baseline justify-center gap-1">
                 <span
                   data-stat-value={stat.value}
-                  className="font-mono text-5xl md:text-6xl font-bold tabular-nums"
+                  className="font-mono text-3xl sm:text-5xl md:text-6xl font-bold tabular-nums"
                   style={{ color: '#D4AF7A' }}
                 >
                   0
                 </span>
                 {stat.suffix && (
-                  <span className="font-mono text-2xl md:text-3xl" style={{ color: '#D4AF7A', opacity: 0.7 }}>
+                  <span className="font-mono text-lg sm:text-2xl md:text-3xl" style={{ color: '#D4AF7A', opacity: 0.7 }}>
                     {stat.suffix}
                   </span>
                 )}
               </div>
-              <p className="mt-3 text-sm font-mono tracking-wider uppercase" style={{ color: 'rgba(245,243,238,0.4)' }}>
+              <p className="mt-2 sm:mt-3 text-xs sm:text-sm font-mono tracking-wider uppercase" style={{ color: 'rgba(245,243,238,0.4)' }}>
                 {stat.label}
               </p>
             </div>
@@ -105,7 +105,7 @@ export default function StatsSection() {
 
         {/* Divider */}
         <div
-          className="w-full h-px mb-24"
+          className="w-full h-px mb-12 sm:mb-20 md:mb-24"
           style={{ background: 'linear-gradient(90deg, transparent, rgba(212,175,122,0.2), transparent)' }}
         />
 
@@ -123,7 +123,7 @@ export default function StatsSection() {
               <div
                 key={pillar}
                 data-pillar
-                className="group relative rounded-2xl p-8 overflow-hidden cursor-interact"
+                className="group relative rounded-2xl p-6 sm:p-8 overflow-hidden cursor-interact"
                 style={{
                   background: 'rgba(255,255,255,0.02)',
                   border: '1px solid rgba(255,255,255,0.06)',
@@ -149,7 +149,7 @@ export default function StatsSection() {
                     <IconComp className="w-6 h-6" style={{ color: '#D4AF7A' }} strokeWidth={1.5} />
                   </div>
                   <h3
-                    className="font-mono text-lg tracking-[0.2em] font-bold mb-3"
+                    className="font-mono text-base sm:text-lg tracking-[0.2em] font-bold mb-3"
                     style={{ color: '#D4AF7A' }}
                   >
                     {pillar}

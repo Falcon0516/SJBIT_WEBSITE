@@ -80,28 +80,28 @@ export default function EventsSection() {
   return (
     <section ref={sectionRef} id="events" className="relative">
       {/* ─── Section Header ─── */}
-      <div className="pt-28 pb-16 px-6 text-center">
+      <div className="pt-20 sm:pt-28 pb-12 sm:pb-16 px-4 sm:px-6 text-center">
         <div data-events-heading>
           <p
-            className="font-mono text-xs tracking-[0.3em] uppercase mb-4"
+            className="font-mono text-xs tracking-[0.3em] uppercase mb-3 sm:mb-4"
             style={{ color: 'rgba(212,175,122,0.6)' }}
           >
             Explore Events
           </p>
-          <h2 className="font-serif text-4xl md:text-6xl mb-4" style={{ color: '#F5F3EE' }}>
+          <h2 className="font-serif text-3xl sm:text-4xl md:text-6xl mb-3 sm:mb-4" style={{ color: '#F5F3EE' }}>
             8 Flagship Events
           </h2>
-          <p className="text-lg max-w-xl mx-auto" style={{ color: 'rgba(245,243,238,0.4)' }}>
+          <p className="text-sm sm:text-base md:text-lg max-w-xl mx-auto px-2" style={{ color: 'rgba(245,243,238,0.4)' }}>
             Compete, learn, and showcase your skills across eight curated challenges.
           </p>
         </div>
       </div>
 
       {/* ─── 3D Carousel Preview ─── */}
-      <div className="relative py-20 overflow-hidden" style={{ perspective: '1200px' }}>
+      <div className="relative py-12 sm:py-20 overflow-hidden" style={{ perspective: '1200px' }}>
         <div
           ref={carouselRef}
-          className="relative mx-auto"
+          className="relative mx-auto scale-[0.72] sm:scale-[0.88] md:scale-100 origin-center transition-transform"
           style={{
             width: '280px',
             height: '360px',
@@ -152,7 +152,7 @@ export default function EventsSection() {
       </div>
 
       {/* ─── Individual Event Showcases ─── */}
-      <div className="max-w-6xl mx-auto px-6 pb-20">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 sm:pb-20">
         {events.map((event, i) => {
           // @ts-expect-error dynamic icon lookup
           const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
@@ -162,14 +162,14 @@ export default function EventsSection() {
             <div
               key={event.id}
               data-event-showcase
-              className="relative py-16 md:py-24 overflow-hidden bg-[#050506]"
+              className="relative py-12 sm:py-16 md:py-24 overflow-hidden bg-[#050506]"
               style={{
                 borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
               }}
             >
               {/* Themed background simulation */}
               <EventSimulation slug={event.slug} color={event.colorHex} />
-              <div className={`grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16 items-center ${isEven ? '' : 'md:[direction:rtl]'}`}>
+              <div className={`grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 md:gap-16 items-center ${isEven ? '' : 'md:[direction:rtl]'}`}>
                 {/* Image */}
                 <div
                   data-event-img
@@ -196,15 +196,15 @@ export default function EventsSection() {
 
                   {/* Floating badge */}
                   <div
-                    className="absolute top-4 left-4 px-3 py-1.5 rounded-full flex items-center gap-2"
+                    className="absolute top-3 left-3 sm:top-4 sm:left-4 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full flex items-center gap-2"
                     style={{
                       background: 'rgba(5,5,6,0.7)',
                       backdropFilter: 'blur(12px)',
                       border: `1px solid ${event.colorHex}30`,
                     }}
                   >
-                    <Icon className="w-4 h-4" style={{ color: event.colorHex }} strokeWidth={1.5} />
-                    <span className="text-xs font-mono font-semibold" style={{ color: event.colorHex }}>
+                    <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: event.colorHex }} strokeWidth={1.5} />
+                    <span className="text-[11px] sm:text-xs font-mono font-semibold" style={{ color: event.colorHex }}>
                       {event.id}
                     </span>
                   </div>
@@ -221,11 +221,11 @@ export default function EventsSection() {
                 {/* Content */}
                 <div data-event-content style={{ direction: 'ltr' }}>
                   {/* Tags row */}
-                  <div className="flex flex-wrap gap-2 mb-5">
+                  <div className="flex flex-wrap gap-2 mb-4 sm:mb-5">
                     {event.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="px-3 py-1 text-[10px] font-mono font-semibold tracking-[0.15em] uppercase rounded-full"
+                        className="px-2.5 sm:px-3 py-1 text-[10px] font-mono font-semibold tracking-[0.15em] uppercase rounded-full"
                         style={{
                           background: `${event.colorHex}0C`,
                           color: `${event.colorHex}BB`,
@@ -237,12 +237,12 @@ export default function EventsSection() {
                     ))}
                   </div>
 
-                  <h3 className="font-serif text-3xl md:text-4xl font-bold mb-4" style={{ color: '#F5F3EE' }}>
+                  <h3 className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4" style={{ color: '#F5F3EE' }}>
                     {event.title}
                   </h3>
 
                   <p
-                    className="text-base leading-relaxed mb-8"
+                    className="text-sm sm:text-base leading-relaxed mb-6 sm:mb-8"
                     style={{ color: 'rgba(245,243,238,0.5)' }}
                   >
                     {event.description}
@@ -253,7 +253,7 @@ export default function EventsSection() {
                     href={event.exploreUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="cursor-interact group/btn inline-flex items-center gap-3 px-8 py-3.5 rounded-xl text-sm font-medium transition-all duration-300 overflow-hidden relative"
+                    className="cursor-interact group/btn inline-flex items-center justify-center w-full sm:w-auto gap-3 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl text-sm font-medium transition-all duration-300 overflow-hidden relative"
                     style={{
                       background: 'transparent',
                       color: event.colorHex,

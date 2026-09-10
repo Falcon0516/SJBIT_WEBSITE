@@ -31,7 +31,7 @@ export default function HeroOverlay({ progress, prefersReducedMotion = false }: 
   }, [progress, prefersReducedMotion, heroOverlayTimeline]);
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-6 text-center">
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-4 sm:px-6 text-center">
       <AnimatePresence mode="wait">
         {activeFrameIndex !== -1 &&
           heroOverlayTimeline[activeFrameIndex].heading !== '' && (
@@ -107,7 +107,7 @@ function OverlayText({
       className="max-w-5xl"
     >
       <h1
-        className="font-serif text-5xl md:text-7xl lg:text-8xl mb-6 tracking-tight"
+        className="font-serif text-3xl sm:text-5xl md:text-7xl lg:text-8xl mb-3 sm:mb-6 tracking-tight"
         style={{
           color: '#F5F3EE',
           textShadow: '0 4px 40px rgba(0,0,0,0.6), 0 0 120px rgba(212,175,122,0.15)',
@@ -116,7 +116,7 @@ function OverlayText({
         {frame.heading}
       </h1>
       <p
-        className="text-lg md:text-2xl tracking-wide font-light"
+        className="text-sm sm:text-lg md:text-2xl tracking-wide font-light px-2"
         style={{
           color: 'rgba(245, 243, 238, 0.7)',
           textShadow: '0 2px 20px rgba(0,0,0,0.5)',

@@ -139,8 +139,6 @@ export default function HeroScrub() {
 
         // Only redraw if frame actually changed
         if (frameIndex !== currentFrameRef.current) {
-          // On mobile, throttle to every 2nd tick
-          if (isMobile && frameIndex % 2 !== 0) return;
           drawFrame(frameIndex);
         }
       },
@@ -155,7 +153,7 @@ export default function HeroScrub() {
   // ─── Reduced Motion Fallback ───
   if (prefersReducedMotion) {
     return (
-      <section className="relative w-full h-screen bg-[#050506] overflow-hidden">
+      <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden">
         <Image
           src="/images/hero-poster.jpg"
           alt="SJBIT Campus"
@@ -172,9 +170,9 @@ export default function HeroScrub() {
   return (
     <section
       ref={containerRef}
-      className="relative w-full bg-[#050506] h-[500vh] md:h-[500vh] max-md:h-[300vh]"
+      className="relative w-full bg-[#050506] h-[300vh] md:h-[500vh]"
     >
-      <div ref={stickyRef} className="w-full h-screen overflow-hidden">
+      <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden">
         {/* Poster placeholder until first frame loads */}
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${
@@ -204,17 +202,17 @@ export default function HeroScrub() {
 
         {/* Bottom scroll cue — visible until the end of the scrub */}
         <div
-          className={`absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-opacity duration-500 ${
+          className={`absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-opacity duration-500 ${
             scrollProgress < 0.98 ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
           <span
-            className="text-xs font-mono tracking-[0.2em] uppercase mb-2"
+            className="text-[10px] sm:text-xs font-mono tracking-[0.2em] uppercase mb-2"
             style={{ color: '#D4AF7A' }}
           >
             Scroll to explore
           </span>
-          <ChevronDown className="w-5 h-5 animate-bounce" style={{ color: '#D4AF7A' }} />
+          <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce" style={{ color: '#D4AF7A' }} />
         </div>
       </div>
     </section>

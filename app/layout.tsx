@@ -19,7 +19,15 @@ const jetbrains = JetBrains_Mono({
   subsets: ['latin'],
 });
 
+export const viewport = {
+  themeColor: '#050506',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 export const metadata: Metadata = {
+  metadataBase: new URL('https://sjbit-website.vercel.app'),
   title: 'SJBIT Silver Jubilee TechFest | Ideas Today, Solutions Tomorrow',
   description:
     'Skills. Ideas. Impact. For a Brighter Tomorrow. 8 flagship events, ₹4,00,000 prize pool.',
