@@ -13,14 +13,15 @@
     "notes": "eventName, dates, venue and registerCtaUrl are PLACEHOLDERS — the poster did not include them. Replace before launch."
   },
   "heroOverlayTimeline": [
-    { "scrollStart": 0.00, "scrollEnd": 0.10, "heading": "Where It All Began", "sub": "A bare foundation. Year 2001." },
-    { "scrollStart": 0.10, "scrollEnd": 0.22, "heading": "From Vision to Reality", "sub": "Building the future, brick by brick" },
-    { "scrollStart": 0.22, "scrollEnd": 0.38, "heading": "SJBIT Today", "sub": "25 years of engineering excellence" },
-    { "scrollStart": 0.38, "scrollEnd": 0.52, "heading": "Ideas Today, Solutions Tomorrow", "sub": "Silver Jubilee TechFest · Prize Pool ₹4,00,000" },
-    { "scrollStart": 0.52, "scrollEnd": 0.65, "heading": "Celebrating 25 Years", "sub": "A legacy of innovation and impact" },
-    { "scrollStart": 0.65, "scrollEnd": 0.84, "heading": "", "sub": "" },
-    { "scrollStart": 0.84, "scrollEnd": 0.95, "heading": "", "sub": "" },
-    { "scrollStart": 0.95, "scrollEnd": 1.00, "heading": "8 Flagship Events Await", "sub": "Scroll to explore ↓" }
+    { "scrollStart": 0.00, "scrollEnd": 0.12, "heading": "Where It All Began", "sub": "A bare foundation. Year 2001." },
+    { "scrollStart": 0.12, "scrollEnd": 0.24, "heading": "From Vision to Reality", "sub": "Building the future, brick by brick" },
+    { "scrollStart": 0.24, "scrollEnd": 0.34, "heading": "", "sub": "" },
+    { "scrollStart": 0.34, "scrollEnd": 0.48, "heading": "SJBIT Today", "sub": "25 years of engineering excellence" },
+    { "scrollStart": 0.48, "scrollEnd": 0.60, "heading": "Ideas Today, Solutions Tomorrow", "sub": "Silver Jubilee TechFest · Prize Pool ₹4,00,000" },
+    { "scrollStart": 0.60, "scrollEnd": 0.72, "heading": "Celebrating 25 Years", "sub": "A legacy of innovation and impact" },
+    { "scrollStart": 0.72, "scrollEnd": 0.85, "heading": "", "sub": "" },
+    { "scrollStart": 0.85, "scrollEnd": 0.92, "heading": "", "sub": "" },
+    { "scrollStart": 0.92, "scrollEnd": 1.00, "heading": "8 Flagship Events Await", "sub": "Scroll to explore ↓" }
   ],
   "events": [
     {
