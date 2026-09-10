@@ -8,7 +8,11 @@ import { ArrowRight } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
 
-export default function Navbar() {
+interface NavbarProps {
+  onRegisterClick?: () => void;
+}
+
+export default function Navbar({ onRegisterClick }: NavbarProps) {
   const navRef = useRef<HTMLElement>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -77,11 +81,9 @@ export default function Navbar() {
           ))}
         </div>
 
-        {/* CTA */}
-        <a
-          href={site.registerCtaUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* CTA — opens RegisterModal */}
+        <button
+          onClick={onRegisterClick}
           className="cursor-interact group inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-1.5 sm:py-2.5 rounded-full text-xs sm:text-sm font-medium transition-all duration-300 border"
           style={{
             borderColor: '#D4AF7A',
@@ -98,8 +100,9 @@ export default function Navbar() {
         >
           {site.registerCtaLabel}
           <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform group-hover:translate-x-0.5" />
-        </a>
+        </button>
       </div>
     </nav>
   );
 }
+

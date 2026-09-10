@@ -114,9 +114,15 @@ export default function EventsSection() {
             const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
 
             return (
-              <div
+              <a
                 key={event.id}
-                className="absolute inset-0 flex flex-col items-center justify-center rounded-xl sm:rounded-2xl overflow-hidden"
+                href={`#event-${event.slug}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  const target = document.getElementById(`event-${event.slug}`);
+                  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className="cursor-interact absolute inset-0 flex flex-col items-center justify-center rounded-xl sm:rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.03]"
                 style={{
                   transform: `rotateY(${angle}deg) translateZ(var(--card-r))`,
                   backfaceVisibility: 'hidden',
@@ -145,11 +151,19 @@ export default function EventsSection() {
                     {event.tags.slice(0, 2).join(' · ')}
                   </p>
                 </div>
-              </div>
+              </a>
             );
           })}
         </div>
       </div>
+
+      {/* ─── Carousel Helper Text ─── */}
+      <p
+        className="text-center font-mono text-[11px] sm:text-xs tracking-wider -mt-4 sm:-mt-8 mb-8 sm:mb-12"
+        style={{ color: 'rgba(212,175,122,0.35)' }}
+      >
+        Click on any card to know more about the event
+      </p>
 
       {/* ─── Individual Event Showcases ─── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 sm:pb-20">
@@ -161,6 +175,7 @@ export default function EventsSection() {
           return (
             <div
               key={event.id}
+              id={`event-${event.slug}`}
               data-event-showcase
               className="relative py-12 sm:py-16 md:py-24 overflow-hidden bg-[#050506]"
               style={{
