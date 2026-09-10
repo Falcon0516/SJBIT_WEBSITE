@@ -1,0 +1,115 @@
+{
+  "site": {
+    "eventName": "SJBIT Silver Jubilee TechFest",
+    "tagline": "Ideas Today, Solutions Tomorrow",
+    "subTagline": "Skills. Ideas. Impact. For a Brighter Tomorrow.",
+    "prizePoolLabel": "Prize Pool of",
+    "prizePoolAmount": 400000,
+    "prizePoolDisplay": "₹4,00,000",
+    "pillars": ["WIN", "LEARN", "SHOWCASE"],
+    "campusName": "SJBIT Campus",
+    "registerCtaLabel": "Register Now",
+    "registerCtaUrl": "https://REPLACE-ME-registration-portal.example.com",
+    "notes": "eventName, dates, venue and registerCtaUrl are PLACEHOLDERS — the poster did not include them. Replace before launch."
+  },
+  "heroOverlayTimeline": [
+    { "scrollStart": 0.00, "scrollEnd": 0.10, "heading": "Where It All Began", "sub": "A bare foundation. Year 2001." },
+    { "scrollStart": 0.10, "scrollEnd": 0.22, "heading": "From Vision to Reality", "sub": "Building the future, brick by brick" },
+    { "scrollStart": 0.22, "scrollEnd": 0.38, "heading": "SJBIT Today", "sub": "25 years of engineering excellence" },
+    { "scrollStart": 0.38, "scrollEnd": 0.52, "heading": "Ideas Today, Solutions Tomorrow", "sub": "Silver Jubilee TechFest · Prize Pool ₹4,00,000" },
+    { "scrollStart": 0.52, "scrollEnd": 0.65, "heading": "Celebrating 25 Years", "sub": "A legacy of innovation and impact" },
+    { "scrollStart": 0.65, "scrollEnd": 0.84, "heading": "", "sub": "" },
+    { "scrollStart": 0.84, "scrollEnd": 0.95, "heading": "", "sub": "" },
+    { "scrollStart": 0.95, "scrollEnd": 1.00, "heading": "8 Flagship Events Await", "sub": "Scroll to explore ↓" }
+  ],
+  "events": [
+    {
+      "id": "01",
+      "slug": "ai-prompt-battle",
+      "title": "AI Prompt Battle",
+      "description": "Participants compete to create effective prompts for solving technical and creative problems using AI tools.",
+      "tags": ["PROMPT", "CREATE", "SOLVE", "INNOVATE"],
+      "icon": "BrainCircuit",
+      "colorHex": "#C0392B",
+      "bgTintHex": "#F3D9D6",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/ai-prompt-battle"
+    },
+    {
+      "id": "02",
+      "slug": "code-relay",
+      "title": "Code Relay",
+      "description": "Teams solve a programming problem in stages, with each member continuing from the previous member's code. Number of stagewise outcomes is considered for evaluation.",
+      "tags": ["CODE", "PASS", "SOLVE", "REPEAT"],
+      "icon": "Code2",
+      "colorHex": "#3E6B96",
+      "bgTintHex": "#D7E3EC",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/code-relay"
+    },
+    {
+      "id": "03",
+      "slug": "hack-and-hunt",
+      "title": "Hack & Hunt",
+      "description": "Participants solve a series of technical clues, coding challenges and logical puzzles to reach the final solution.",
+      "tags": ["EXPLORE", "ANALYZE", "SOLVE", "WIN"],
+      "icon": "SearchCode",
+      "colorHex": "#4C7A52",
+      "bgTintHex": "#DCE7DC",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/hack-and-hunt"
+    },
+    {
+      "id": "04",
+      "slug": "app-development-challenge",
+      "title": "App Development Challenge",
+      "description": "Teams conceptualize, design and develop a mobile/web application based on a common theme or problem statement.",
+      "tags": ["IDEAS", "INTO", "APPLICATIONS"],
+      "icon": "Smartphone",
+      "colorHex": "#C98A2E",
+      "bgTintHex": "#F0E1C8",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/app-development-challenge"
+    },
+    {
+      "id": "05",
+      "slug": "zerocrypt-ctf",
+      "title": "Zerocrypt CTF",
+      "description": "Hands-on cybersecurity competition that challenges participants to solve real-world security problems and capture hidden flags.",
+      "tags": ["THINK", "EXPLOIT", "CAPTURE", "SECURE"],
+      "icon": "ShieldCheck",
+      "colorHex": "#6C5B9E",
+      "bgTintHex": "#DCD6EC",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/zerocrypt-ctf"
+    },
+    {
+      "id": "06",
+      "slug": "innovation-marathon",
+      "title": "Innovation Marathon",
+      "description": "Teams progress from problem identification to ideation, prototyping, testing and pitching over two days.",
+      "tags": ["IDEATE", "PROTOTYPE", "TEST", "PITCH"],
+      "icon": "Lightbulb",
+      "colorHex": "#D9714B",
+      "bgTintHex": "#F2DCD1",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/innovation-marathon"
+    },
+    {
+      "id": "07",
+      "slug": "green-tech-challenge",
+      "title": "Green Tech Challenge",
+      "description": "Teams develop technology-driven solutions for sustainability, renewable energy, water conservation or waste reduction.",
+      "tags": ["GREENER", "IDEAS", "CLEANER", "TOMORROW"],
+      "icon": "Sprout",
+      "colorHex": "#3F8F63",
+      "bgTintHex": "#D6EADC",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/green-tech-challenge"
+    },
+    {
+      "id": "08",
+      "slug": "roboinnovate",
+      "title": "RoboInnovate",
+      "description": "Teams from different disciplines collaborate to develop a working robotic solution for a real-world problem.",
+      "tags": ["BUILD", "PROGRAM", "INNOVATE", "AUTOMATE"],
+      "icon": "Bot",
+      "colorHex": "#5C84B8",
+      "bgTintHex": "#D9E4F0",
+      "exploreUrl": "https://REPLACE-ME.example.com/events/roboinnovate"
+    }
+  ]
+}
