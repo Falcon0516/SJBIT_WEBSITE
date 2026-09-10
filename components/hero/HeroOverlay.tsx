@@ -5,39 +5,49 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { content, HeroOverlayFrame } from '@/lib/content';
 
 interface HeroOverlayProps {
-  progress: number;
+  progress?: number;
+  activeFrameIndex?: number;
   prefersReducedMotion?: boolean;
 }
 
-export default function HeroOverlay({ progress, prefersReducedMotion = false }: HeroOverlayProps) {
-  const [activeFrameIndex, setActiveFrameIndex] = useState<number>(-1);
+export default function HeroOverlay({
+  progress,
+  activeFrameIndex: controlledIndex,
+  prefersReducedMotion = false,
+}: HeroOverlayProps) {
   const { heroOverlayTimeline, site } = content;
+  const [internalIndex, setInternalIndex] = useState<number>(-1);
+
+  const activeIndex = controlledIndex !== undefined ? controlledIndex : internalIndex;
 
   useEffect(() => {
+    if (controlledIndex !== undefined) return;
     if (prefersReducedMotion) {
-      setActiveFrameIndex(heroOverlayTimeline.length - 1);
+      setInternalIndex(heroOverlayTimeline.length - 1);
       return;
     }
+    if (progress === undefined) return;
 
     const index = heroOverlayTimeline.findIndex(
       (frame) => progress >= frame.scrollStart && progress <= frame.scrollEnd
     );
 
     if (index === -1 && progress > heroOverlayTimeline[heroOverlayTimeline.length - 1].scrollEnd) {
-      setActiveFrameIndex(heroOverlayTimeline.length - 1);
+      setInternalIndex(heroOverlayTimeline.length - 1);
     } else {
-      setActiveFrameIndex(index);
+      setInternalIndex(index);
     }
-  }, [progress, prefersReducedMotion, heroOverlayTimeline]);
+  }, [progress, controlledIndex, prefersReducedMotion, heroOverlayTimeline]);
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-4 sm:px-6 text-center">
       <AnimatePresence mode="wait">
-        {activeFrameIndex !== -1 &&
-          heroOverlayTimeline[activeFrameIndex].heading !== '' && (
+        {activeIndex !== -1 &&
+          heroOverlayTimeline[activeIndex] &&
+          heroOverlayTimeline[activeIndex].heading !== '' && (
           <OverlayText
-            key={activeFrameIndex}
-            frame={heroOverlayTimeline[activeFrameIndex]}
+            key={activeIndex}
+            frame={heroOverlayTimeline[activeIndex]}
             prefersReducedMotion={prefersReducedMotion}
             prizePoolAmount={site.prizePoolAmount}
           />

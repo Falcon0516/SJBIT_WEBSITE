@@ -19,10 +19,19 @@ export default function SmoothScrollProvider({ children }: SmoothScrollProviderP
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReducedMotion) return;
 
+    // On touch devices (phones/tablets), native inertial scrolling is 60-120fps hardware accelerated.
+    // Hijacking touch with JavaScript smooth-scroll causes severe touch latency and choppiness.
+    const isTouchDevice = 'ontouchstart' in window || (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+    if (isTouchDevice) {
+      // On mobile, keep default GSAP lag smoothing active for smooth ScrollTrigger interpolation
+      gsap.ticker.lagSmoothing(500, 33);
+      return;
+    }
+
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      touchMultiplier: 2,
+      syncTouch: false,
     });
 
     lenisRef.current = lenis;
@@ -30,13 +39,15 @@ export default function SmoothScrollProvider({ children }: SmoothScrollProviderP
     // Sync Lenis with GSAP ScrollTrigger
     lenis.on('scroll', ScrollTrigger.update);
 
-    gsap.ticker.add((time) => {
+    const tickerHandler = (time: number) => {
       lenis.raf(time * 1000);
-    });
+    };
 
-    gsap.ticker.lagSmoothing(0);
+    gsap.ticker.add(tickerHandler);
+    gsap.ticker.lagSmoothing(500, 33); // Keep lag smoothing enabled to prevent frame hitching
 
     return () => {
+      gsap.ticker.remove(tickerHandler);
       lenis.destroy();
       lenisRef.current = null;
     };

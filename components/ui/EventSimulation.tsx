@@ -24,18 +24,20 @@ export default function EventSimulation({ slug, color, className = '' }: EventSi
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
+    // On mobile devices, skip heavy canvas simulation RAF loops to guarantee 60-120fps smooth scrolling
+    if (window.innerWidth < 768) {
+      return;
+    }
+
     const el = containerRef.current;
     if (!el) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        // Only mount when near viewport; once mounted, keep mounted
-        if (entry.isIntersecting) {
-          setShouldRender(true);
-          observer.disconnect(); // Once visible, stay rendered forever
-        }
+        // Only run simulation when within viewport to save CPU/battery
+        setShouldRender(entry.isIntersecting);
       },
-      { rootMargin: '300px' }
+      { rootMargin: '150px' }
     );
     observer.observe(el);
     return () => observer.disconnect();

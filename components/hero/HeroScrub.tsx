@@ -6,27 +6,33 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import HeroOverlay from './HeroOverlay';
 import Image from 'next/image';
 import { ChevronDown } from 'lucide-react';
+import { content } from '@/lib/content';
 
 gsap.registerPlugin(ScrollTrigger);
 
 const TOTAL_FRAMES = 180;
-const MOBILE_FRAMES = 90; // Load every 2nd frame on mobile
+const MOBILE_FRAMES = 90;
 
-function getFrameSrc(index: number): string {
-  // Frames are 1-indexed: frame-001.jpg, frame-002.jpg, ...
-  return `/frames/hero/frame-${String(index).padStart(3, '0')}.jpg`;
+function getFrameSrc(index: number, isMobile: boolean): string {
+  const pad = String(index).padStart(3, '0');
+  if (isMobile) {
+    return `/frames/hero-mobile/frame-${pad}.jpg`;
+  }
+  return `/frames/hero/frame-${pad}.jpg`;
 }
 
 export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cueRef = useRef<HTMLDivElement>(null);
   const framesRef = useRef<HTMLImageElement[]>([]);
   const currentFrameRef = useRef(0);
+  const activeTimelineIndexRef = useRef(0);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
+  const [activeTimelineIndex, setActiveTimelineIndex] = useState(0);
 
   // Detect reduced motion
   useEffect(() => {
@@ -69,21 +75,6 @@ export default function HeroScrub() {
 
       // Draw fitted image
       ctx.drawImage(img, dx, dy, dw, dh);
-
-      // Subtle edge feathering at top and bottom to seamlessly blend into background
-      const fadeH = Math.min(32, dh * 0.15);
-
-      const topGrad = ctx.createLinearGradient(0, dy, 0, dy + fadeH);
-      topGrad.addColorStop(0, '#050506');
-      topGrad.addColorStop(1, 'rgba(5, 5, 6, 0)');
-      ctx.fillStyle = topGrad;
-      ctx.fillRect(0, dy - 1, cw, fadeH + 1);
-
-      const btmGrad = ctx.createLinearGradient(0, dy + dh - fadeH, 0, dy + dh);
-      btmGrad.addColorStop(0, 'rgba(5, 5, 6, 0)');
-      btmGrad.addColorStop(1, '#050506');
-      ctx.fillStyle = btmGrad;
-      ctx.fillRect(0, dy + dh - fadeH, cw, fadeH + 1);
     } else {
       // Landscape: full bleed cover
       const scale = Math.max(cw / iw, ch / ih);
@@ -98,36 +89,46 @@ export default function HeroScrub() {
     currentFrameRef.current = frameIndex;
   }, []);
 
-  // Preload frame images
+  // Preload frame images with async GPU decode
   useEffect(() => {
     if (prefersReducedMotion) return;
 
     const isMobile = window.innerWidth < 768;
     const frameCount = isMobile ? MOBILE_FRAMES : TOTAL_FRAMES;
-    const step = isMobile ? 2 : 1; // skip every other frame on mobile
+    const step = isMobile ? 2 : 1;
 
     const images: HTMLImageElement[] = [];
-    let loadedCount = 0;
+    let isInitialDrawn = false;
 
     for (let i = 0; i < frameCount; i++) {
       const img = new window.Image();
       const frameNum = isMobile ? (i * step) + 1 : i + 1;
-      img.src = getFrameSrc(frameNum);
-      img.onload = () => {
-        loadedCount++;
-        // Show as soon as first frame loads
-        if (loadedCount === 1) {
-          setIsLoaded(true);
-          drawFrame(0);
-        }
-      };
+      img.src = getFrameSrc(frameNum, isMobile);
+
+      // Async decode so bitmaps are already decompressed in GPU memory before scrubbing
+      img.decode()
+        .then(() => {
+          if (!isInitialDrawn && i === 0) {
+            isInitialDrawn = true;
+            setIsLoaded(true);
+            drawFrame(0);
+          }
+        })
+        .catch(() => {
+          if (!isInitialDrawn && i === 0) {
+            isInitialDrawn = true;
+            setIsLoaded(true);
+            drawFrame(0);
+          }
+        });
+
       images.push(img);
     }
 
     framesRef.current = images;
   }, [prefersReducedMotion, drawFrame]);
 
-  // Setup ScrollTrigger for pinning + frame scrubbing
+  // Setup ScrollTrigger with RAF VSYNC batching and zero scroll-tick React re-renders
   useEffect(() => {
     if (prefersReducedMotion || !isLoaded) return;
 
@@ -136,12 +137,9 @@ export default function HeroScrub() {
     const canvas = canvasRef.current;
     if (!container || !sticky || !canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
     const isMobile = window.innerWidth < 768;
 
-    // Size the canvas
+    // Size the canvas (capped at 2x DPR to prevent extreme GPU fill on high-density mobile displays)
     const resizeCanvas = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = window.innerWidth;
@@ -150,32 +148,62 @@ export default function HeroScrub() {
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
-      // Redraw current frame at new size
       drawFrame(currentFrameRef.current);
     };
 
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // Pin the sticky container and scrub frames
+    const timeline = content.heroOverlayTimeline;
+    let pendingFrameIndex: number | null = null;
+    let isDrawPending = false;
+
+    // Pin the sticky container and scrub frames smoothly
     const trigger = ScrollTrigger.create({
       trigger: container,
       start: 'top top',
       end: 'bottom bottom',
       pin: sticky,
-      scrub: true,
+      scrub: isMobile ? 0.3 : true,
       onUpdate: (self) => {
-        setScrollProgress(self.progress);
+        const progress = self.progress;
 
+        // 1. Update overlay beat ONLY when timeline index changes (max 7 times in total)
+        const tIndex = timeline.findIndex(
+          (frame) => progress >= frame.scrollStart && progress <= frame.scrollEnd
+        );
+        const resolvedIndex = tIndex === -1 && progress > timeline[timeline.length - 1].scrollEnd
+          ? timeline.length - 1
+          : tIndex;
+
+        if (resolvedIndex !== -1 && resolvedIndex !== activeTimelineIndexRef.current) {
+          activeTimelineIndexRef.current = resolvedIndex;
+          setActiveTimelineIndex(resolvedIndex);
+        }
+
+        // 2. Direct DOM update for scroll cue visibility (0 React re-renders)
+        if (cueRef.current) {
+          cueRef.current.style.opacity = progress < 0.98 ? '1' : '0';
+        }
+
+        // 3. Batch canvas draws to VSYNC via requestAnimationFrame
         const totalFrames = framesRef.current.length;
         const frameIndex = Math.min(
-          Math.floor(self.progress * totalFrames),
+          Math.floor(progress * totalFrames),
           totalFrames - 1
         );
 
-        // Only redraw if frame actually changed
         if (frameIndex !== currentFrameRef.current) {
-          drawFrame(frameIndex);
+          pendingFrameIndex = frameIndex;
+          if (!isDrawPending) {
+            isDrawPending = true;
+            requestAnimationFrame(() => {
+              if (pendingFrameIndex !== null) {
+                drawFrame(pendingFrameIndex);
+              }
+              isDrawPending = false;
+            });
+          }
         }
       },
     });
@@ -198,7 +226,7 @@ export default function HeroScrub() {
           priority
         />
         <div className="absolute inset-0 bg-black/50" />
-        <HeroOverlay progress={1} prefersReducedMotion={true} />
+        <HeroOverlay activeFrameIndex={content.heroOverlayTimeline.length - 1} prefersReducedMotion={true} />
       </section>
     );
   }
@@ -233,17 +261,16 @@ export default function HeroScrub() {
           className="absolute inset-0 w-full h-full"
         />
 
-        {/* Dark gradient overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
+        {/* Hardware-accelerated gradient overlay for text readability & top/bottom feathering */}
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/70 via-transparent to-[#050506]/70" />
 
-        {/* Hero text overlay */}
-        <HeroOverlay progress={scrollProgress} />
+        {/* Hero text overlay (updates only when timeline beat changes) */}
+        <HeroOverlay activeFrameIndex={activeTimelineIndex} />
 
-        {/* Bottom scroll cue — visible until the end of the scrub */}
+        {/* Bottom scroll cue — direct DOM opacity controlled */}
         <div
-          className={`absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-opacity duration-500 ${
-            scrollProgress < 0.98 ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
+          ref={cueRef}
+          className="absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-opacity duration-300 pointer-events-none"
         >
           <span
             className="text-[10px] sm:text-xs font-mono tracking-[0.2em] uppercase mb-2"
