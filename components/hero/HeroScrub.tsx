@@ -45,10 +45,9 @@ function getCampusFrameSrc(index: number, isMobile: boolean): string {
 /** Detect low-end devices */
 function isLowEndDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
-  const cores = navigator.hardwareConcurrency || 4;
-  // @ts-expect-error - deviceMemory is not in all TS typings
-  const memory = navigator.deviceMemory || 4;
-  return cores <= 4 || memory <= 4;
+  const cores = navigator.hardwareConcurrency || 8;
+  const memory = 'deviceMemory' in navigator ? (navigator as any).deviceMemory : 8;
+  return cores <= 4 && memory <= 4;
 }
 
 export default function HeroScrub() {
@@ -230,8 +229,7 @@ export default function HeroScrub() {
             }
           });
       } else {
-        // Defer remaining frames to idle time
-        img.loading = 'lazy';
+        // Defer remaining frames (do not use loading="lazy" for off-DOM images)
         img.decode().catch(() => {});
       }
 
@@ -253,7 +251,6 @@ export default function HeroScrub() {
       const img = new window.Image();
       const frameNum = isMobile || lowEnd ? i * campusStep + 1 : i + 1;
       img.src = getCampusFrameSrc(frameNum, isMobile);
-      img.loading = 'lazy';
       img.decode().catch(() => {}); // silent — GPU pre-decode
       campusImages.push(img);
     }
