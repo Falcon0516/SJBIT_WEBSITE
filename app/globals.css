@@ -68,6 +68,32 @@ body {
   background: radial-gradient(circle, #6C5B9E 0%, transparent 70%);
 }
 
+/* ─── 3D Cylindrical Carousel ─── */
+.carousel-3d-wrapper {
+  --card-w: 160px;
+  --card-h: 220px;
+  --card-r: 240px;
+  perspective: 1000px;
+}
+
+@media (min-width: 640px) {
+  .carousel-3d-wrapper {
+    --card-w: 210px;
+    --card-h: 280px;
+    --card-r: 320px;
+    perspective: 1100px;
+  }
+}
+
+@media (min-width: 768px) {
+  .carousel-3d-wrapper {
+    --card-w: 280px;
+    --card-h: 360px;
+    --card-r: 420px;
+    perspective: 1200px;
+  }
+}
+
 /* ─── Glass Panel ─── */
 .glass-panel {
   background: var(--color-surface);

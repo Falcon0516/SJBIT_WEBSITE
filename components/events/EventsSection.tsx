@@ -98,35 +98,34 @@ export default function EventsSection() {
       </div>
 
       {/* ─── 3D Carousel Preview ─── */}
-      <div className="relative py-12 sm:py-20 overflow-hidden" style={{ perspective: '1200px' }}>
+      <div className="carousel-3d-wrapper relative py-12 sm:py-20 overflow-hidden">
         <div
           ref={carouselRef}
-          className="relative mx-auto scale-[0.72] sm:scale-[0.88] md:scale-100 origin-center transition-transform"
+          className="relative mx-auto"
           style={{
-            width: '280px',
-            height: '360px',
+            width: 'var(--card-w)',
+            height: 'var(--card-h)',
             transformStyle: 'preserve-3d',
           }}
         >
           {events.map((event, i) => {
             const angle = (360 / events.length) * i;
-            const radius = 420;
             // @ts-expect-error dynamic icon lookup
             const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
 
             return (
               <div
                 key={event.id}
-                className="absolute inset-0 flex flex-col items-center justify-center rounded-2xl overflow-hidden"
+                className="absolute inset-0 flex flex-col items-center justify-center rounded-xl sm:rounded-2xl overflow-hidden"
                 style={{
-                  transform: `rotateY(${angle}deg) translateZ(${radius}px)`,
+                  transform: `rotateY(${angle}deg) translateZ(var(--card-r))`,
                   backfaceVisibility: 'hidden',
                   background: 'rgba(10,10,14,0.9)',
                   border: `1px solid ${event.colorHex}25`,
                   boxShadow: `0 0 30px ${event.colorHex}10`,
                 }}
               >
-                <div className="relative w-full h-40 overflow-hidden">
+                <div className="relative w-full h-24 sm:h-28 md:h-40 overflow-hidden">
                   <Image
                     src={`/images/events/${event.slug}.jpg`}
                     alt={event.title}
@@ -136,12 +135,12 @@ export default function EventsSection() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0e] to-transparent" />
                 </div>
-                <div className="p-5 text-center">
-                  <Icon className="w-8 h-8 mx-auto mb-3" style={{ color: event.colorHex }} strokeWidth={1.5} />
-                  <h4 className="font-serif text-lg font-bold mb-1" style={{ color: '#F5F3EE' }}>
+                <div className="p-3 sm:p-4 md:p-5 text-center flex flex-col items-center justify-center flex-1 w-full">
+                  <Icon className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 mx-auto mb-1.5 md:mb-3" style={{ color: event.colorHex }} strokeWidth={1.5} />
+                  <h4 className="font-serif text-xs sm:text-base md:text-lg font-bold mb-0.5 sm:mb-1 line-clamp-1" style={{ color: '#F5F3EE' }}>
                     {event.title}
                   </h4>
-                  <p className="text-xs font-mono tracking-wider uppercase" style={{ color: `${event.colorHex}90` }}>
+                  <p className="text-[9px] sm:text-[11px] md:text-xs font-mono tracking-wider uppercase line-clamp-1" style={{ color: `${event.colorHex}90` }}>
                     {event.tags.slice(0, 2).join(' · ')}
                   </p>
                 </div>
