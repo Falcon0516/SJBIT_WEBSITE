@@ -12,9 +12,13 @@ gsap.registerPlugin(ScrollTrigger);
 
 /* ─── Frame counts ─── */
 const INTRO_FRAMES_DESKTOP = 150;
-const INTRO_FRAMES_MOBILE = 75;   // every 2nd frame
+const INTRO_FRAMES_MOBILE = 50;    // reduced from 75 — every 3rd frame
 const CAMPUS_FRAMES_DESKTOP = 180;
-const CAMPUS_FRAMES_MOBILE = 90;  // every 2nd frame
+const CAMPUS_FRAMES_MOBILE = 60;   // reduced from 90 — every 3rd frame
+
+/* Low-end device gets even fewer frames */
+const INTRO_FRAMES_LOW_END = 30;
+const CAMPUS_FRAMES_LOW_END = 36;
 
 /* ─── Scroll boundaries ─── */
 const INTRO_END = 0.30;           // intro clip occupies 0 → 30%
@@ -25,17 +29,26 @@ const CAMPUS_START = 0.30;        // campus clip starts
 function getIntroFrameSrc(index: number, isMobile: boolean): string {
   const pad = String(index).padStart(3, '0');
   if (isMobile) {
-    return `/frames/intro-mobile/frame-${pad}.jpg`;
+    return `/frames/intro-mobile/frame-${pad}.webp`;
   }
-  return `/frames/intro/frame-${pad}.jpg`;
+  return `/frames/intro/frame-${pad}.webp`;
 }
 
 function getCampusFrameSrc(index: number, isMobile: boolean): string {
   const pad = String(index).padStart(3, '0');
   if (isMobile) {
-    return `/frames/hero-mobile/frame-${pad}.jpg`;
+    return `/frames/hero-mobile/frame-${pad}.webp`;
   }
-  return `/frames/hero/frame-${pad}.jpg`;
+  return `/frames/hero/frame-${pad}.webp`;
+}
+
+/** Detect low-end devices */
+function isLowEndDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const cores = navigator.hardwareConcurrency || 4;
+  // @ts-expect-error - deviceMemory is not in all TS typings
+  const memory = navigator.deviceMemory || 4;
+  return cores <= 4 || memory <= 4;
 }
 
 export default function HeroScrub() {
@@ -174,52 +187,73 @@ export default function HeroScrub() {
     [drawImageToCanvas]
   );
 
-  // Preload frame images with async GPU decode
+  // Preload frame images with progressive loading
   useEffect(() => {
     if (prefersReducedMotion) return;
 
     const isMobile = window.innerWidth < 768;
+    const lowEnd = isLowEndDevice();
 
     // --- Intro frames ---
-    const introCount = isMobile ? INTRO_FRAMES_MOBILE : INTRO_FRAMES_DESKTOP;
-    const introStep = isMobile ? 2 : 1;
+    const introCount = lowEnd
+      ? INTRO_FRAMES_LOW_END
+      : isMobile
+        ? INTRO_FRAMES_MOBILE
+        : INTRO_FRAMES_DESKTOP;
+
+    const introStep = lowEnd ? 5 : isMobile ? 3 : 1;
     const introImages: HTMLImageElement[] = [];
     let introFirstDrawn = false;
 
+    // Load first 8 frames immediately for fast first paint
+    const PRIORITY_COUNT = 8;
+
     for (let i = 0; i < introCount; i++) {
       const img = new window.Image();
-      const frameNum = isMobile ? i * introStep + 1 : i + 1;
+      const frameNum = isMobile || lowEnd ? i * introStep + 1 : i + 1;
       img.src = getIntroFrameSrc(frameNum, isMobile);
 
-      img.decode()
-        .then(() => {
-          if (!introFirstDrawn && i === 0) {
-            introFirstDrawn = true;
-            setIsLoaded(true);
-            drawFrame(0);
-          }
-        })
-        .catch(() => {
-          if (!introFirstDrawn && i === 0) {
-            introFirstDrawn = true;
-            setIsLoaded(true);
-            drawFrame(0);
-          }
-        });
+      if (i < PRIORITY_COUNT) {
+        img.decode()
+          .then(() => {
+            if (!introFirstDrawn && i === 0) {
+              introFirstDrawn = true;
+              setIsLoaded(true);
+              drawFrame(0);
+            }
+          })
+          .catch(() => {
+            if (!introFirstDrawn && i === 0) {
+              introFirstDrawn = true;
+              setIsLoaded(true);
+              drawFrame(0);
+            }
+          });
+      } else {
+        // Defer remaining frames to idle time
+        img.loading = 'lazy';
+        img.decode().catch(() => {});
+      }
 
       introImages.push(img);
     }
     introFramesRef.current = introImages;
 
     // --- Campus frames ---
-    const campusCount = isMobile ? CAMPUS_FRAMES_MOBILE : CAMPUS_FRAMES_DESKTOP;
-    const campusStep = isMobile ? 2 : 1;
+    const campusCount = lowEnd
+      ? CAMPUS_FRAMES_LOW_END
+      : isMobile
+        ? CAMPUS_FRAMES_MOBILE
+        : CAMPUS_FRAMES_DESKTOP;
+
+    const campusStep = lowEnd ? 5 : isMobile ? 3 : 1;
     const campusImages: HTMLImageElement[] = [];
 
     for (let i = 0; i < campusCount; i++) {
       const img = new window.Image();
-      const frameNum = isMobile ? i * campusStep + 1 : i + 1;
+      const frameNum = isMobile || lowEnd ? i * campusStep + 1 : i + 1;
       img.src = getCampusFrameSrc(frameNum, isMobile);
+      img.loading = 'lazy';
       img.decode().catch(() => {}); // silent — GPU pre-decode
       campusImages.push(img);
     }
@@ -236,10 +270,12 @@ export default function HeroScrub() {
     if (!container || !sticky || !canvas) return;
 
     const isMobile = window.innerWidth < 768;
+    const lowEnd = isLowEndDevice();
 
-    // Size the canvas (capped at 2x DPR)
+    // Size the canvas — cap DPR for performance
     const resizeCanvas = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const maxDpr = lowEnd ? 1 : isMobile ? 1.5 : 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       const w = window.innerWidth;
       const h = window.innerHeight;
       canvas.width = w * dpr;
@@ -250,7 +286,7 @@ export default function HeroScrub() {
     };
 
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', resizeCanvas, { passive: true });
 
     const timeline = content.heroOverlayTimeline;
     let pendingProgress: number | null = null;
@@ -326,7 +362,7 @@ export default function HeroScrub() {
   return (
     <section
       ref={containerRef}
-      className="relative w-full bg-[#050506] h-[400vh] md:h-[700vh]"
+      className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]"
     >
       <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden">
         {/* Ambient gold glow behind portrait canvas */}
@@ -351,6 +387,7 @@ export default function HeroScrub() {
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"
+          style={{ willChange: 'transform' }}
         />
 
         {/* Hardware-accelerated gradient overlay for text readability & top/bottom feathering */}
@@ -365,7 +402,7 @@ export default function HeroScrub() {
             const eventsSection = document.getElementById('events');
             if (eventsSection) eventsSection.scrollIntoView({ behavior: 'smooth' });
           }}
-          className="cursor-interact absolute bottom-16 sm:bottom-20 right-4 sm:right-8 z-20 group inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-mono tracking-wider uppercase transition-all duration-300 pointer-events-auto"
+          className="cursor-interact absolute bottom-16 sm:bottom-20 right-4 sm:right-8 z-20 group inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-mono tracking-wider uppercase transition-all duration-300 pointer-events-auto min-h-[44px] min-w-[44px]"
           style={{
             background: 'rgba(5, 5, 6, 0.4)',
             backdropFilter: 'blur(16px)',
@@ -373,6 +410,7 @@ export default function HeroScrub() {
             border: '1px solid rgba(212, 175, 122, 0.3)',
             color: '#D4AF7A',
             animation: 'float 3s ease-in-out infinite',
+            touchAction: 'manipulation',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'rgba(212, 175, 122, 0.15)';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback } from 'react';
-import * as LucideIcons from 'lucide-react';
+import { getEventIcon, ArrowRight } from '@/lib/event-icons';
 import { EventItem, getEventTheme } from '@/lib/content';
 
 interface EventCardProps {
@@ -16,8 +16,7 @@ export default function EventCard({ event, index }: EventCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [glowIntensity, setGlowIntensity] = useState(0);
 
-  // @ts-expect-error - indexing lucide icons dynamically
-  const IconComponent = LucideIcons[event.icon] || LucideIcons.HelpCircle;
+  const IconComponent = getEventIcon(event.icon);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const card = cardRef.current;
@@ -126,11 +125,11 @@ export default function EventCard({ event, index }: EventCardProps) {
         </span>
 
         {/* Content with depth layers */}
-        <div className="relative z-10 flex flex-col h-full p-8" style={{ transform: 'translateZ(20px)' }}>
+        <div className="relative z-10 flex flex-col h-full p-6 sm:p-8" style={{ transform: 'translateZ(20px)' }}>
           {/* Icon + Index row */}
-          <div className="flex items-start justify-between mb-8">
+          <div className="flex items-start justify-between mb-6 sm:mb-8">
             <div
-              className="relative flex items-center justify-center w-16 h-16 rounded-2xl transition-all duration-500"
+              className="relative flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl transition-all duration-500"
               style={{
                 background: `${event.colorHex}12`,
                 boxShadow: isHovered
@@ -148,7 +147,7 @@ export default function EventCard({ event, index }: EventCardProps) {
                 }}
               />
               <IconComponent
-                className="w-7 h-7 transition-all duration-300"
+                className="w-6 h-6 sm:w-7 sm:h-7 transition-all duration-300"
                 strokeWidth={1.5}
                 style={{
                   color: event.colorHex,
@@ -171,7 +170,7 @@ export default function EventCard({ event, index }: EventCardProps) {
 
           {/* Title */}
           <h3
-            className="font-serif text-2xl font-bold mb-3 transition-colors duration-300"
+            className="font-serif text-xl sm:text-2xl font-bold mb-2 sm:mb-3 transition-colors duration-300"
             style={{ color: isHovered ? '#F5F3EE' : 'rgba(245,243,238,0.9)' }}
           >
             {event.title}
@@ -179,18 +178,18 @@ export default function EventCard({ event, index }: EventCardProps) {
 
           {/* Description */}
           <p
-            className="text-sm leading-relaxed mb-8 flex-grow transition-colors duration-300"
+            className="text-xs sm:text-sm leading-relaxed mb-6 sm:mb-8 flex-grow transition-colors duration-300"
             style={{ color: isHovered ? 'rgba(245,243,238,0.65)' : 'rgba(245,243,238,0.4)' }}
           >
             {event.description}
           </p>
 
           {/* Tags */}
-          <div className="flex flex-wrap gap-2 mb-8">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-6 sm:mb-8">
             {event.tags.map((tag, i) => (
               <span
                 key={tag}
-                className="px-3 py-1 text-[10px] font-mono font-semibold tracking-[0.15em] uppercase rounded-full transition-all duration-300"
+                className="px-2.5 sm:px-3 py-1 text-[9px] sm:text-[10px] font-mono font-semibold tracking-[0.15em] uppercase rounded-full transition-all duration-300"
                 style={{
                   background: isHovered ? `${event.colorHex}18` : `${event.colorHex}0A`,
                   color: event.colorHex,
@@ -209,12 +208,13 @@ export default function EventCard({ event, index }: EventCardProps) {
             href={event.exploreUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-auto inline-flex items-center justify-center w-full py-3.5 rounded-xl text-sm font-medium transition-all duration-400 cursor-interact overflow-hidden relative group/btn"
+            className="mt-auto inline-flex items-center justify-center w-full py-3 sm:py-3.5 rounded-xl text-sm font-medium transition-all duration-400 cursor-interact overflow-hidden relative group/btn"
             style={{
               background: isHovered ? event.colorHex : 'transparent',
               color: isHovered ? '#050506' : event.colorHex,
               border: `1px solid ${event.colorHex}40`,
               boxShadow: isHovered ? `0 4px 20px ${event.colorHex}30` : 'none',
+              touchAction: 'manipulation',
             }}
           >
             {/* Shimmer effect */}
@@ -227,7 +227,7 @@ export default function EventCard({ event, index }: EventCardProps) {
             />
             <span className="relative z-10 flex items-center gap-2">
               Explore Now
-              <LucideIcons.ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />
+              <ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />
             </span>
           </a>
         </div>

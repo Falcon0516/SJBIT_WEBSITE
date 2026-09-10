@@ -5,7 +5,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Image from 'next/image';
 import { content } from '@/lib/content';
-import * as LucideIcons from 'lucide-react';
+import { getEventIcon, ArrowRight } from '@/lib/event-icons';
 import ParticleField from '@/components/ui/ParticleField';
 import EventSimulation from '@/components/ui/EventSimulation';
 
@@ -110,8 +110,7 @@ export default function EventsSection() {
         >
           {events.map((event, i) => {
             const angle = (360 / events.length) * i;
-            // @ts-expect-error dynamic icon lookup
-            const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
+            const Icon = getEventIcon(event.icon);
 
             return (
               <a
@@ -129,6 +128,7 @@ export default function EventsSection() {
                   background: 'rgba(10,10,14,0.9)',
                   border: `1px solid ${event.colorHex}25`,
                   boxShadow: `0 0 30px ${event.colorHex}10`,
+                  touchAction: 'manipulation',
                 }}
               >
                 <div className="relative w-full h-24 sm:h-28 md:h-40 overflow-hidden">
@@ -168,8 +168,7 @@ export default function EventsSection() {
       {/* ─── Individual Event Showcases ─── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 sm:pb-20">
         {events.map((event, i) => {
-          // @ts-expect-error dynamic icon lookup
-          const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
+          const Icon = getEventIcon(event.icon);
           const isEven = i % 2 === 0;
 
           return (
@@ -274,6 +273,7 @@ export default function EventsSection() {
                       background: 'transparent',
                       color: event.colorHex,
                       border: `1px solid ${event.colorHex}40`,
+                      touchAction: 'manipulation',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.background = event.colorHex;
@@ -287,7 +287,7 @@ export default function EventsSection() {
                     }}
                   >
                     Explore Event
-                    <LucideIcons.ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />
                   </a>
                 </div>
               </div>

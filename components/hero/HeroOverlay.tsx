@@ -117,7 +117,7 @@ function OverlayText({
       className="max-w-5xl"
     >
       <h1
-        className="font-serif text-3xl sm:text-5xl md:text-7xl lg:text-8xl mb-3 sm:mb-6 tracking-tight"
+        className="font-serif text-2xl sm:text-5xl md:text-7xl lg:text-8xl mb-3 sm:mb-6 tracking-tight text-balance"
         style={{
           color: '#F5F3EE',
           textShadow: '0 4px 40px rgba(0,0,0,0.6), 0 0 120px rgba(212,175,122,0.15)',
@@ -126,7 +126,7 @@ function OverlayText({
         {frame.heading}
       </h1>
       <p
-        className="text-sm sm:text-lg md:text-2xl tracking-wide font-light px-2"
+        className="text-xs sm:text-lg md:text-2xl tracking-wide font-light px-2 text-balance"
         style={{
           color: 'rgba(245, 243, 238, 0.7)',
           textShadow: '0 2px 20px rgba(0,0,0,0.5)',

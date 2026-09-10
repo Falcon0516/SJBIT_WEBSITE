@@ -240,3 +240,8 @@ summary,
               0 0 25px var(--card-accent, rgba(212,175,122,0.15));
   border-color: var(--card-accent, rgba(212,175,122,0.3)) !important;
 }
+
+/* Disable animation on mobile */
+.register-grid-card.mobile-card {
+  animation: none;
+}

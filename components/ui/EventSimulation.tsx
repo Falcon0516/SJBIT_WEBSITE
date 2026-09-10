@@ -2,6 +2,7 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
+import MobileSimFallback from '@/components/simulations/MobileSimFallback';
 
 interface EventSimulationProps {
   slug: string;
@@ -21,13 +22,15 @@ const InverseKinematicsSimulation = dynamic(() => import('@/components/simulatio
 
 export default function EventSimulation({ slug, color, className = '' }: EventSimulationProps) {
   const [shouldRender, setShouldRender] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    // On mobile devices, skip heavy canvas simulation RAF loops to guarantee 60-120fps smooth scrolling
-    if (window.innerWidth < 768) {
-      return;
-    }
+    const mobile = window.innerWidth < 768;
+    setIsMobile(mobile);
+
+    // On mobile, always show the CSS fallback (no IntersectionObserver needed)
+    if (mobile) return;
 
     const el = containerRef.current;
     if (!el) return;
@@ -69,7 +72,11 @@ export default function EventSimulation({ slug, color, className = '' }: EventSi
 
   return (
     <div ref={containerRef} className={`absolute inset-0 pointer-events-none ${className}`} aria-hidden="true">
-      {renderSimulation()}
+      {isMobile ? (
+        <MobileSimFallback slug={slug} color={color} />
+      ) : (
+        renderSimulation()
+      )}
     </div>
   );
 }

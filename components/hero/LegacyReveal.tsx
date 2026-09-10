@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { content } from '@/lib/content';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight } from '@/lib/event-icons';
+import Image from 'next/image';
 import ParticleField from '@/components/ui/ParticleField';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -16,11 +17,13 @@ export default function LegacyReveal() {
   const ctaRef = useRef<HTMLDivElement>(null);
   const [showEmblem, setShowEmblem] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { site } = content;
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     setPrefersReducedMotion(mq.matches);
+    setIsMobile(window.innerWidth < 768);
   }, []);
 
   // Play video when scrolled into view
@@ -88,20 +91,32 @@ export default function LegacyReveal() {
       id="legacy"
       className="relative w-full overflow-hidden"
     >
-      {/* Video Container */}
       <div className="relative w-full aspect-video max-h-[80vh]">
-        <video
-          ref={videoRef}
-          src="/videos/hero-source.mp4"
-          muted
-          playsInline
-          preload="metadata"
-          className="w-full h-full object-cover"
-          style={{
-            opacity: showEmblem ? 0.3 : 1,
-            transition: 'opacity 1.5s ease-in-out',
-          }}
-        />
+        {isMobile ? (
+          <Image
+            src="/images/hero-poster.jpg"
+            alt="SJBIT Campus Legacy"
+            fill
+            className="object-cover"
+            style={{
+              opacity: showEmblem ? 0.3 : 1,
+              transition: 'opacity 1.5s ease-in-out',
+            }}
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            src="/videos/hero-source.mp4"
+            muted
+            playsInline
+            preload="none"
+            className="w-full h-full object-cover"
+            style={{
+              opacity: showEmblem ? 0.3 : 1,
+              transition: 'opacity 1.5s ease-in-out',
+            }}
+          />
+        )}
 
         {/* Gradient overlays */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-transparent to-transparent" />

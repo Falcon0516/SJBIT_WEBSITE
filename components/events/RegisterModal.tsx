@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { content } from '@/lib/content';
-import * as LucideIcons from 'lucide-react';
+import { getEventIcon, X, Trophy, ArrowUpRight } from '@/lib/event-icons';
 
 const QUOTES = [
   '"The best way to predict the future is to invent it." — Alan Kay',
@@ -97,7 +97,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-0 sm:p-4"
       onClick={handleBackdropClick}
       style={{
         animation: 'modal-fade-in 0.3s ease-out forwards',
@@ -116,7 +116,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
       {/* Modal scroll container — traps scroll inside */}
       <div
         ref={scrollContainerRef}
-        className="relative w-full max-w-5xl max-h-[92vh] rounded-2xl"
+        className="relative w-full h-[100dvh] sm:h-auto sm:max-h-[92vh] max-w-5xl rounded-none sm:rounded-2xl"
         style={{
           animation: 'modal-scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
           background: 'rgba(10, 10, 14, 0.95)',
@@ -140,7 +140,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
             }}
             aria-label="Close registration modal"
           >
-            <LucideIcons.X className="w-4 h-4 sm:w-5 sm:h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 
@@ -179,7 +179,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
                     border: '1px solid rgba(212,175,122,0.2)',
                   }}
                 >
-                  <LucideIcons.Trophy
+                  <Trophy
                     className="w-7 h-7 sm:w-9 sm:h-9"
                     strokeWidth={1.8}
                     style={{
@@ -263,17 +263,15 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
           />
         </div>
 
-        {/* ─── 4×2 Event Grid ─── */}
-        <div className="px-4 sm:px-6 md:px-8 py-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {events.map((event, index) => {
-              // @ts-expect-error dynamic icon lookup
-              const Icon = LucideIcons[event.icon] || LucideIcons.HelpCircle;
+              const Icon = getEventIcon(event.icon);
 
               return (
                 <div
                   key={event.id}
-                  className="register-grid-card group relative rounded-xl overflow-hidden"
+                  className={`register-grid-card group relative rounded-xl overflow-hidden ${typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile-card' : ''}`}
                   style={{
                     background: 'rgba(255,255,255,0.025)',
                     border: `1px solid ${event.colorHex}15`,
@@ -300,7 +298,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
                   />
 
                   {/* Event image */}
-                  <div className="relative h-28 sm:h-32 overflow-hidden">
+                  <div className="relative h-24 sm:h-32 overflow-hidden">
                     <Image
                       src={`/images/events/${event.slug}.jpg`}
                       alt={event.title}
@@ -379,7 +377,7 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
                       }}
                     >
                       Register
-                      <LucideIcons.ArrowUpRight className="w-3 h-3" />
+                      <ArrowUpRight className="w-3 h-3" />
                     </a>
                   </div>
                 </div>
