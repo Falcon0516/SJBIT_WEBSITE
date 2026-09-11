@@ -57,14 +57,14 @@
     },
     {
       "id": "04",
-      "slug": "app-development-challenge",
-      "title": "App Development Challenge",
+      "slug": "appforge",
+      "title": "AppForge",
       "description": "Teams conceptualize, design and develop a mobile/web application based on a common theme or problem statement.",
       "tags": ["IDEAS", "INTO", "APPLICATIONS"],
       "icon": "Smartphone",
       "colorHex": "#C98A2E",
       "bgTintHex": "#F0E1C8",
-      "exploreUrl": "https://REPLACE-ME.example.com/events/app-development-challenge"
+      "exploreUrl": "https://REPLACE-ME.example.com/events/appforge"
     },
     {
       "id": "05",
