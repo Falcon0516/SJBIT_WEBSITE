@@ -20,7 +20,7 @@ export default function Home() {
       <HeroScrub />
       <StatsSection />
       <EventsSection />
-      <LegacyReveal />
+      <LegacyReveal onRegisterClick={() => setIsRegisterOpen(true)} />
       <Footer />
       <RegisterModal
         isOpen={isRegisterOpen}

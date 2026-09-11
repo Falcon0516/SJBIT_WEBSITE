@@ -10,7 +10,7 @@ import ParticleField from '@/components/ui/ParticleField';
 
 gsap.registerPlugin(ScrollTrigger);
 
-export default function LegacyReveal() {
+export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: () => void }) {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const emblemRef = useRef<HTMLDivElement>(null);
@@ -201,10 +201,8 @@ export default function LegacyReveal() {
               {site.prizePoolDisplay}
             </span>
           </p>
-          <a
-            href={site.registerCtaUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={onRegisterClick}
             id="register"
             className="cursor-interact group inline-flex items-center justify-center gap-2 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full font-medium text-base sm:text-lg transition-all duration-300 w-full sm:w-auto"
             style={{
@@ -222,7 +220,7 @@ export default function LegacyReveal() {
           >
             {site.registerCtaLabel}
             <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-          </a>
+          </button>
         </div>
       </div>
     </section>
