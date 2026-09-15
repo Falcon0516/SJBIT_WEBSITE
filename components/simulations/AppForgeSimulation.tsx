@@ -75,7 +75,8 @@ export default function AppForgeSimulation({ color }: SimulationProps) {
     const resize = () => {
       const rect = canvas.parentElement?.getBoundingClientRect();
       if (!rect) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const maxDpr = window.innerWidth < 768 ? 1 : 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       s.width = rect.width;
       s.height = rect.height;
       canvas.width = rect.width * dpr;

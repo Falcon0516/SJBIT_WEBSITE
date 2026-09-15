@@ -92,7 +92,8 @@ export default function IsometricUISimulation({ color }: SimulationProps) {
       if (!parent) return;
       const rect = parent.getBoundingClientRect();
       
-      const dpr = Math.min(window.devicePixelRatio, 2);
+      const maxDpr = window.innerWidth < 768 ? 1 : 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       canvas.style.width = `${rect.width}px`;

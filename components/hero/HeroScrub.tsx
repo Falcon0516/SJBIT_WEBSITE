@@ -12,9 +12,9 @@ gsap.registerPlugin(ScrollTrigger);
 
 /* ─── Frame counts ─── */
 const INTRO_FRAMES_DESKTOP = 150;
-const INTRO_FRAMES_MOBILE = 30;     // reduced for faster mobile loading
+const INTRO_FRAMES_MOBILE = 20;     // Aggressively reduced for faster mobile loading
 const CAMPUS_FRAMES_DESKTOP = 180;
-const CAMPUS_FRAMES_MOBILE = 36;    // reduced for faster mobile loading
+const CAMPUS_FRAMES_MOBILE = 24;    // Aggressively reduced for faster mobile loading
 
 /* Low-end device gets even fewer frames */
 const INTRO_FRAMES_LOW_END = 20;
@@ -93,23 +93,13 @@ export default function HeroScrub() {
     (ctx: CanvasRenderingContext2D, img: HTMLImageElement, cw: number, ch: number) => {
       if (!img || !img.complete || img.naturalWidth === 0) return;
       const { naturalWidth: iw, naturalHeight: ih } = img;
-      const isPortrait = ch > cw;
-
-      if (isPortrait) {
-        const scale = cw / iw;
-        const dw = cw;
-        const dh = ih * scale;
-        const dx = 0;
-        const dy = (ch - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
-      } else {
-        const scale = Math.max(cw / iw, ch / ih);
-        const dw = iw * scale;
-        const dh = ih * scale;
-        const dx = (cw - dw) / 2;
-        const dy = (ch - dh) / 2;
-        ctx.drawImage(img, dx, dy, dw, dh);
-      }
+      // Use object-fit: cover logic for all orientations
+      const scale = Math.max(cw / iw, ch / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = (cw - dw) / 2;
+      const dy = (ch - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
     },
     []
   );
@@ -292,9 +282,9 @@ export default function HeroScrub() {
     const isMobile = window.innerWidth < 768;
     const lowEnd = isLowEndDevice();
 
-    // Size the canvas — cap DPR for performance
+    // Size the canvas — cap DPR to 1 on mobile for performance
     const resizeCanvas = () => {
-      const maxDpr = lowEnd ? 1 : isMobile ? 1.5 : 2;
+      const maxDpr = isMobile || lowEnd ? 1 : 2;
       const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       const w = window.innerWidth;
       const h = window.innerHeight;
