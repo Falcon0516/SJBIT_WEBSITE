@@ -2,7 +2,6 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import MobileSimFallback from '@/components/simulations/MobileSimFallback';
 
 interface EventSimulationProps {
   slug: string;
@@ -14,7 +13,7 @@ interface EventSimulationProps {
 const NeuralSimulation = dynamic(() => import('@/components/simulations/NeuralSimulation'), { ssr: false });
 const MatrixRelaySimulation = dynamic(() => import('@/components/simulations/MatrixRelaySimulation'), { ssr: false });
 const PathfinderSimulation = dynamic(() => import('@/components/simulations/PathfinderSimulation'), { ssr: false });
-const IsometricUISimulation = dynamic(() => import('@/components/simulations/IsometricUISimulation'), { ssr: false });
+const AppForgeSimulation = dynamic(() => import('@/components/simulations/AppForgeSimulation'), { ssr: false });
 const CellularAutomataSimulation = dynamic(() => import('@/components/simulations/CellularAutomataSimulation'), { ssr: false });
 const KinematicGearsSimulation = dynamic(() => import('@/components/simulations/KinematicGearsSimulation'), { ssr: false });
 const LSystemTreeSimulation = dynamic(() => import('@/components/simulations/LSystemTreeSimulation'), { ssr: false });
@@ -22,16 +21,9 @@ const InverseKinematicsSimulation = dynamic(() => import('@/components/simulatio
 
 export default function EventSimulation({ slug, color, className = '' }: EventSimulationProps) {
   const [shouldRender, setShouldRender] = React.useState(false);
-  const [isMobile, setIsMobile] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    const mobile = window.innerWidth < 768;
-    setIsMobile(mobile);
-
-    // On mobile, always show the CSS fallback (no IntersectionObserver needed)
-    if (mobile) return;
-
     const el = containerRef.current;
     if (!el) return;
 
@@ -55,8 +47,8 @@ export default function EventSimulation({ slug, color, className = '' }: EventSi
         return <MatrixRelaySimulation color={color} />;
       case 'hack-and-hunt':
         return <PathfinderSimulation color={color} />;
-      case 'app-development-challenge':
-        return <IsometricUISimulation color={color} />;
+      case 'appforge':
+        return <AppForgeSimulation color={color} />;
       case 'zerocrypt-ctf':
         return <CellularAutomataSimulation color={color} />;
       case 'innovation-marathon':
@@ -72,11 +64,7 @@ export default function EventSimulation({ slug, color, className = '' }: EventSi
 
   return (
     <div ref={containerRef} className={`absolute inset-0 pointer-events-none ${className}`} aria-hidden="true">
-      {isMobile ? (
-        <MobileSimFallback slug={slug} color={color} />
-      ) : (
-        renderSimulation()
-      )}
+      {renderSimulation()}
     </div>
   );
 }

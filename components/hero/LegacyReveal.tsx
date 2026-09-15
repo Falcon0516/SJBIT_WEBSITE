@@ -58,7 +58,7 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
     return () => video.removeEventListener('timeupdate', onTimeUpdate);
   }, []);
 
-  // Animate emblem + CTA when they appear
+  // Animate emblem when it appears
   useEffect(() => {
     if (!showEmblem || prefersReducedMotion) return;
 
@@ -68,13 +68,6 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
           emblemRef.current,
           { scale: 0.6, opacity: 0 },
           { scale: 1, opacity: 1, duration: 1.2, ease: 'power3.out' }
-        );
-      }
-      if (ctaRef.current) {
-        gsap.fromTo(
-          ctaRef.current,
-          { y: 30, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.8, delay: 0.5, ease: 'power3.out' }
         );
       }
     });
@@ -172,7 +165,6 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
         <div
           ref={ctaRef}
           className="relative z-10 w-full max-w-md sm:max-w-xl mx-auto"
-          style={{ opacity: prefersReducedMotion ? 1 : 0 }}
         >
           <h3
             className="font-serif text-2xl sm:text-3xl md:text-5xl mb-3 sm:mb-4 px-2"

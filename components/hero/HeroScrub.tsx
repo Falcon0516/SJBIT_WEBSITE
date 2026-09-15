@@ -12,19 +12,23 @@ gsap.registerPlugin(ScrollTrigger);
 
 /* ─── Frame counts ─── */
 const INTRO_FRAMES_DESKTOP = 150;
-const INTRO_FRAMES_MOBILE = 50;    // reduced from 75 — every 3rd frame
+const INTRO_FRAMES_MOBILE = 30;     // reduced for faster mobile loading
 const CAMPUS_FRAMES_DESKTOP = 180;
-const CAMPUS_FRAMES_MOBILE = 60;   // reduced from 90 — every 3rd frame
+const CAMPUS_FRAMES_MOBILE = 36;    // reduced for faster mobile loading
 
 /* Low-end device gets even fewer frames */
-const INTRO_FRAMES_LOW_END = 30;
-const CAMPUS_FRAMES_LOW_END = 36;
+const INTRO_FRAMES_LOW_END = 20;
+const CAMPUS_FRAMES_LOW_END = 24;
 
 /* ─── Scroll boundaries ─── */
 const INTRO_END = 0.30;           // intro clip occupies 0 → 30%
 const TRANSITION_START = 0.26;    // cross-fade begins
 const TRANSITION_END = 0.34;      // cross-fade ends
 const CAMPUS_START = 0.30;        // campus clip starts
+
+/* ─── Glow overlay boundaries (intro frames 53-108 out of 150) ─── */
+const GLOW_SCROLL_START = (53 / 150) * INTRO_END;  // ~0.106
+const GLOW_SCROLL_END = (108 / 150) * INTRO_END;    // ~0.216
 
 function getIntroFrameSrc(index: number, isMobile: boolean): string {
   const pad = String(index).padStart(3, '0');
@@ -55,6 +59,7 @@ export default function HeroScrub() {
   const stickyRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cueRef = useRef<HTMLDivElement>(null);
+  const glowRef = useRef<HTMLDivElement>(null);
 
   const introFramesRef = useRef<HTMLImageElement[]>([]);
   const campusFramesRef = useRef<HTMLImageElement[]>([]);
@@ -62,7 +67,13 @@ export default function HeroScrub() {
   const activeTimelineIndexRef = useRef(0);
   const lastProgressRef = useRef(0);
 
+  /* Frame fallback refs — prevent blank/jump when frame not yet loaded */
+  const lastDrawnIntroRef = useRef(0);
+  const lastDrawnCampusRef = useRef(0);
+
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isAllLoaded, setIsAllLoaded] = useState(false);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [activeTimelineIndex, setActiveTimelineIndex] = useState(0);
 
@@ -103,6 +114,33 @@ export default function HeroScrub() {
     []
   );
 
+  /** Draw frame safely — falls back to last drawn frame if target isn't loaded yet */
+  const drawSafeFrame = useCallback(
+    (
+      ctx: CanvasRenderingContext2D,
+      frames: HTMLImageElement[],
+      index: number,
+      lastDrawnRef: React.MutableRefObject<number>,
+      cw: number,
+      ch: number,
+      alpha: number = 1
+    ) => {
+      const img = frames[index];
+      ctx.globalAlpha = alpha;
+      if (img && img.complete && img.naturalWidth > 0) {
+        drawImageToCanvas(ctx, img, cw, ch);
+        lastDrawnRef.current = index;
+      } else {
+        // Fall back to last successfully drawn frame to prevent jumps
+        const fallback = frames[lastDrawnRef.current];
+        if (fallback && fallback.complete && fallback.naturalWidth > 0) {
+          drawImageToCanvas(ctx, fallback, cw, ch);
+        }
+      }
+    },
+    [drawImageToCanvas]
+  );
+
   // Master draw function — handles intro, transition cross-fade, and campus phases
   const drawFrame = useCallback(
     (scrollProgress: number) => {
@@ -129,11 +167,7 @@ export default function HeroScrub() {
           Math.floor(introProgress * introFrames.length),
           introFrames.length - 1
         );
-        const img = introFrames[introIndex];
-        if (img) {
-          ctx.globalAlpha = 1;
-          drawImageToCanvas(ctx, img, cw, ch);
-        }
+        drawSafeFrame(ctx, introFrames, introIndex, lastDrawnIntroRef, cw, ch);
       } else if (scrollProgress >= TRANSITION_END) {
         /* ── Pure campus phase ── */
         currentPhaseRef.current = 'campus';
@@ -142,11 +176,7 @@ export default function HeroScrub() {
           Math.floor(campusProgress * campusFrames.length),
           campusFrames.length - 1
         );
-        const img = campusFrames[campusIndex];
-        if (img) {
-          ctx.globalAlpha = 1;
-          drawImageToCanvas(ctx, img, cw, ch);
-        }
+        drawSafeFrame(ctx, campusFrames, campusIndex, lastDrawnCampusRef, cw, ch);
       } else {
         /* ── Cross-fade transition ── */
         currentPhaseRef.current = 'transition';
@@ -159,11 +189,7 @@ export default function HeroScrub() {
           Math.floor(introProgress * introFrames.length),
           introFrames.length - 1
         );
-        const introImg = introFrames[introIndex];
-        if (introImg) {
-          ctx.globalAlpha = 1 - easedFade;
-          drawImageToCanvas(ctx, introImg, cw, ch);
-        }
+        drawSafeFrame(ctx, introFrames, introIndex, lastDrawnIntroRef, cw, ch, 1 - easedFade);
 
         // Campus frame (fading in)
         const campusProgress = (scrollProgress - CAMPUS_START) / (1 - CAMPUS_START);
@@ -174,19 +200,15 @@ export default function HeroScrub() {
             campusFrames.length - 1
           )
         );
-        const campusImg = campusFrames[campusIndex];
-        if (campusImg) {
-          ctx.globalAlpha = easedFade;
-          drawImageToCanvas(ctx, campusImg, cw, ch);
-        }
+        drawSafeFrame(ctx, campusFrames, campusIndex, lastDrawnCampusRef, cw, ch, easedFade);
 
         ctx.globalAlpha = 1;
       }
     },
-    [drawImageToCanvas]
+    [drawSafeFrame]
   );
 
-  // Preload frame images with progressive loading
+  // Preload frame images with full load tracking
   useEffect(() => {
     if (prefersReducedMotion) return;
 
@@ -200,42 +222,8 @@ export default function HeroScrub() {
         ? INTRO_FRAMES_MOBILE
         : INTRO_FRAMES_DESKTOP;
 
-    const introStep = lowEnd ? 5 : isMobile ? 3 : 1;
+    const introStep = lowEnd ? 5 : isMobile ? 5 : 1;
     const introImages: HTMLImageElement[] = [];
-    let introFirstDrawn = false;
-
-    // Load first 8 frames immediately for fast first paint
-    const PRIORITY_COUNT = 8;
-
-    for (let i = 0; i < introCount; i++) {
-      const img = new window.Image();
-      const frameNum = isMobile || lowEnd ? i * introStep + 1 : i + 1;
-      img.src = getIntroFrameSrc(frameNum, isMobile);
-
-      if (i < PRIORITY_COUNT) {
-        img.decode()
-          .then(() => {
-            if (!introFirstDrawn && i === 0) {
-              introFirstDrawn = true;
-              setIsLoaded(true);
-              drawFrame(0);
-            }
-          })
-          .catch(() => {
-            if (!introFirstDrawn && i === 0) {
-              introFirstDrawn = true;
-              setIsLoaded(true);
-              drawFrame(0);
-            }
-          });
-      } else {
-        // Defer remaining frames (do not use loading="lazy" for off-DOM images)
-        img.decode().catch(() => {});
-      }
-
-      introImages.push(img);
-    }
-    introFramesRef.current = introImages;
 
     // --- Campus frames ---
     const campusCount = lowEnd
@@ -244,14 +232,49 @@ export default function HeroScrub() {
         ? CAMPUS_FRAMES_MOBILE
         : CAMPUS_FRAMES_DESKTOP;
 
-    const campusStep = lowEnd ? 5 : isMobile ? 3 : 1;
+    const campusStep = lowEnd ? 5 : isMobile ? 5 : 1;
     const campusImages: HTMLImageElement[] = [];
 
+    const totalFrames = introCount + campusCount;
+    let loadedCount = 0;
+    let firstDrawDone = false;
+
+    const onFrameLoad = () => {
+      loadedCount++;
+      const pct = Math.round((loadedCount / totalFrames) * 100);
+      setLoadProgress(pct);
+
+      // Show canvas after first frame loads (poster swap)
+      if (!firstDrawDone && loadedCount >= 1) {
+        firstDrawDone = true;
+        setIsLoaded(true);
+        drawFrame(0);
+      }
+
+      // All frames loaded — unlock smooth scrolling
+      if (loadedCount >= totalFrames) {
+        setIsAllLoaded(true);
+      }
+    };
+
+    // Load intro frames
+    for (let i = 0; i < introCount; i++) {
+      const img = new window.Image();
+      const frameNum = isMobile || lowEnd ? i * introStep + 1 : i + 1;
+      img.src = getIntroFrameSrc(frameNum, isMobile);
+      img.onload = onFrameLoad;
+      img.onerror = onFrameLoad; // Count errors too to avoid blocking forever
+      introImages.push(img);
+    }
+    introFramesRef.current = introImages;
+
+    // Load campus frames
     for (let i = 0; i < campusCount; i++) {
       const img = new window.Image();
       const frameNum = isMobile || lowEnd ? i * campusStep + 1 : i + 1;
       img.src = getCampusFrameSrc(frameNum, isMobile);
-      img.decode().catch(() => {}); // silent — GPU pre-decode
+      img.onload = onFrameLoad;
+      img.onerror = onFrameLoad;
       campusImages.push(img);
     }
     campusFramesRef.current = campusImages;
@@ -319,7 +342,20 @@ export default function HeroScrub() {
           cueRef.current.style.opacity = progress < 0.98 ? '1' : '0';
         }
 
-        // 3. Batch canvas draws to VSYNC via requestAnimationFrame
+        // 3. Direct DOM update for glow overlay
+        if (glowRef.current) {
+          if (progress >= GLOW_SCROLL_START && progress <= GLOW_SCROLL_END) {
+            const glowMid = (GLOW_SCROLL_START + GLOW_SCROLL_END) / 2;
+            const glowHalf = (GLOW_SCROLL_END - GLOW_SCROLL_START) / 2;
+            const dist = Math.abs(progress - glowMid);
+            const intensity = 1 - (dist / glowHalf); // 0 at edges, 1 at center
+            glowRef.current.style.opacity = String(Math.max(0, intensity * 0.85));
+          } else {
+            glowRef.current.style.opacity = '0';
+          }
+        }
+
+        // 4. Batch canvas draws to VSYNC via requestAnimationFrame
         pendingProgress = progress;
         if (!isDrawPending) {
           isDrawPending = true;
@@ -387,6 +423,61 @@ export default function HeroScrub() {
           style={{ willChange: 'transform' }}
         />
 
+        {/* ── Golden glow overlay for grand intro moments (frames 53-108) ── */}
+        <div
+          ref={glowRef}
+          className="absolute inset-0 pointer-events-none z-[5]"
+          style={{
+            opacity: 0,
+            willChange: 'opacity',
+            transition: 'opacity 0.5s ease-out',
+          }}
+        >
+          {/* Radial golden glow */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `
+                radial-gradient(ellipse 70% 50% at 50% 50%, rgba(212,175,122,0.22) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 35% at 30% 45%, rgba(212,175,122,0.12) 0%, transparent 50%),
+                radial-gradient(ellipse 40% 35% at 70% 55%, rgba(212,175,122,0.12) 0%, transparent 50%)
+              `,
+              mixBlendMode: 'screen',
+              animation: 'glow-breathe 3s ease-in-out infinite',
+            }}
+          />
+          {/* Animated rotating rays */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `conic-gradient(
+                from 0deg at 50% 50%,
+                transparent 0deg,
+                rgba(212,175,122,0.06) 20deg,
+                transparent 40deg,
+                transparent 90deg,
+                rgba(212,175,122,0.04) 110deg,
+                transparent 130deg,
+                transparent 180deg,
+                rgba(212,175,122,0.06) 200deg,
+                transparent 220deg,
+                transparent 270deg,
+                rgba(212,175,122,0.04) 290deg,
+                transparent 310deg
+              )`,
+              animation: 'glow-rotate 12s linear infinite',
+              mixBlendMode: 'screen',
+            }}
+          />
+          {/* Top/bottom vignette for the glow */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(to bottom, rgba(212,175,122,0.08) 0%, transparent 30%, transparent 70%, rgba(212,175,122,0.06) 100%)',
+            }}
+          />
+        </div>
+
         {/* Hardware-accelerated gradient overlay for text readability & top/bottom feathering */}
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/70 via-transparent to-[#050506]/70" />
 
@@ -436,6 +527,46 @@ export default function HeroScrub() {
             Scroll to explore
           </span>
           <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce" style={{ color: '#D4AF7A' }} />
+        </div>
+
+        {/* ── Loading overlay — blocks interaction until all frames are preloaded ── */}
+        <div
+          className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#050506] transition-opacity duration-700 ${
+            isAllLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+        >
+          <span
+            className="font-serif text-6xl sm:text-8xl tracking-tighter select-none"
+            style={{
+              color: '#D4AF7A',
+              animation: 'pulse-glow 2s ease-in-out infinite',
+              textShadow: '0 0 40px rgba(212,175,122,0.3)',
+            }}
+          >
+            XXV
+          </span>
+          <p
+            className="mt-4 font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase"
+            style={{ color: 'rgba(212,175,122,0.5)' }}
+          >
+            Silver Jubilee
+          </p>
+          <div className="mt-6 w-40 sm:w-48 h-[2px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${loadProgress}%`,
+                background: 'linear-gradient(90deg, #D4AF7A, #E8C992)',
+                transition: 'width 0.3s ease-out',
+              }}
+            />
+          </div>
+          <span
+            className="mt-2 font-mono text-[9px] tracking-widest"
+            style={{ color: 'rgba(212,175,122,0.3)' }}
+          >
+            {loadProgress}%
+          </span>
         </div>
       </div>
     </section>

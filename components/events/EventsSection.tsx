@@ -270,24 +270,33 @@ export default function EventsSection() {
                     rel="noopener noreferrer"
                     className="cursor-interact group/btn inline-flex items-center justify-center w-full sm:w-auto gap-3 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl text-sm font-medium transition-all duration-300 overflow-hidden relative"
                     style={{
-                      background: 'transparent',
-                      color: event.colorHex,
-                      border: `1px solid ${event.colorHex}40`,
+                      background: event.colorHex,
+                      color: '#050506',
+                      border: `1px solid ${event.colorHex}`,
+                      boxShadow: `0 0 24px ${event.colorHex}30, 0 4px 16px rgba(0,0,0,0.3)`,
                       touchAction: 'manipulation',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = event.colorHex;
-                      e.currentTarget.style.color = '#050506';
-                      e.currentTarget.style.boxShadow = `0 0 30px ${event.colorHex}30`;
+                      e.currentTarget.style.boxShadow = `0 0 40px ${event.colorHex}50, 0 8px 30px rgba(0,0,0,0.4)`;
+                      e.currentTarget.style.transform = 'translateY(-2px) scale(1.03)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = event.colorHex;
-                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.boxShadow = `0 0 24px ${event.colorHex}30, 0 4px 16px rgba(0,0,0,0.3)`;
+                      e.currentTarget.style.transform = 'none';
                     }}
                   >
-                    Explore Event
-                    <ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />
+                    {/* Shimmer effect */}
+                    <div
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        background: 'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%)',
+                        animation: 'shimmer 3s infinite',
+                      }}
+                    />
+                    <span className="relative z-10 flex items-center gap-2 font-semibold">
+                      Explore Event
+                      <ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />
+                    </span>
                   </a>
                 </div>
               </div>
