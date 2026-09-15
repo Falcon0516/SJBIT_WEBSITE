@@ -11,42 +11,38 @@ import { content } from '@/lib/content';
 gsap.registerPlugin(ScrollTrigger);
 
 /* ─── Frame counts ─── */
-const INTRO_FRAMES_DESKTOP = 150;
-const INTRO_FRAMES_MOBILE = 20;     // Aggressively reduced for faster mobile loading
-const CAMPUS_FRAMES_DESKTOP = 180;
-const CAMPUS_FRAMES_MOBILE = 24;    // Aggressively reduced for faster mobile loading
+const INTRO_TOTAL = 150;
+const CAMPUS_TOTAL = 180;
 
-/* Low-end device gets even fewer frames */
-const INTRO_FRAMES_LOW_END = 20;
-const CAMPUS_FRAMES_LOW_END = 24;
+const MOBILE_INTRO_COUNT = 30; // Better fidelity on mobile
+const MOBILE_CAMPUS_COUNT = 36;
 
 /* ─── Scroll boundaries ─── */
-const INTRO_END = 0.30;           // intro clip occupies 0 → 30%
-const TRANSITION_START = 0.26;    // cross-fade begins
-const TRANSITION_END = 0.34;      // cross-fade ends
-const CAMPUS_START = 0.30;        // campus clip starts
+const INTRO_END = 0.30;
+const TRANSITION_START = 0.26;
+const TRANSITION_END = 0.34;
+const CAMPUS_START = 0.30;
 
 /* ─── Glow overlay boundaries (intro frames 53-108 out of 150) ─── */
-const GLOW_SCROLL_START = (53 / 150) * INTRO_END;  // ~0.106
-const GLOW_SCROLL_END = (108 / 150) * INTRO_END;    // ~0.216
+const GLOW_SCROLL_START = (53 / 150) * INTRO_END;
+const GLOW_SCROLL_END = (108 / 150) * INTRO_END;
+
+type FrameCache = ImageBitmap | HTMLImageElement;
 
 function getIntroFrameSrc(index: number, isMobile: boolean): string {
   const pad = String(index).padStart(3, '0');
-  if (isMobile) {
-    return `/frames/intro-mobile/frame-${pad}.webp`;
-  }
-  return `/frames/intro/frame-${pad}.webp`;
+  return isMobile
+    ? `/frames/intro-mobile/frame-${pad}.webp`
+    : `/frames/intro/frame-${pad}.webp`;
 }
 
 function getCampusFrameSrc(index: number, isMobile: boolean): string {
   const pad = String(index).padStart(3, '0');
-  if (isMobile) {
-    return `/frames/hero-mobile/frame-${pad}.webp`;
-  }
-  return `/frames/hero/frame-${pad}.webp`;
+  return isMobile
+    ? `/frames/hero-mobile/frame-${pad}.webp`
+    : `/frames/hero/frame-${pad}.webp`;
 }
 
-/** Detect low-end devices */
 function isLowEndDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   const cores = navigator.hardwareConcurrency || 8;
@@ -58,27 +54,22 @@ export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const domScrubRef = useRef<HTMLDivElement>(null);
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
-  const introFramesRef = useRef<HTMLImageElement[]>([]);
-  const campusFramesRef = useRef<HTMLImageElement[]>([]);
+  const introFramesRef = useRef<FrameCache[]>([]);
+  const campusFramesRef = useRef<FrameCache[]>([]);
   const currentPhaseRef = useRef<'intro' | 'transition' | 'campus'>('intro');
-  const activeTimelineIndexRef = useRef(0);
+  const activeTimelineIndexRef = useRef(-1);
   const lastProgressRef = useRef(0);
-
-  /* Frame fallback refs — prevent blank/jump when frame not yet loaded */
   const lastDrawnIntroRef = useRef(0);
   const lastDrawnCampusRef = useRef(0);
 
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isAllLoaded, setIsAllLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const [activeTimelineIndex, setActiveTimelineIndex] = useState(0);
+  const [activeTimelineIndex, setActiveTimelineIndex] = useState(-1);
 
-  // Detect reduced motion
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     setPrefersReducedMotion(mq.matches);
@@ -87,44 +78,59 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  /* ─── Draw helpers ─── */
-
-  // Draw a single image onto canvas with portrait-fit / landscape-cover logic
+  /* ─── Unified Draw Helper for ImageBitmap and HTMLImageElement ─── */
   const drawImageToCanvas = useCallback(
-    (ctx: CanvasRenderingContext2D, img: HTMLImageElement, cw: number, ch: number) => {
-      if (!img || !img.complete || img.naturalWidth === 0) return;
-      const { naturalWidth: iw, naturalHeight: ih } = img;
-      // Use object-fit: contain logic so the landscape animation is fully visible on portrait
-      const scale = Math.min(cw / iw, ch / ih);
+    (ctx: CanvasRenderingContext2D, frame: FrameCache, cw: number, ch: number) => {
+      if (!frame) return;
+      
+      let iw, ih;
+      if ('naturalWidth' in frame) {
+        if (!frame.complete || frame.naturalWidth === 0) return;
+        iw = frame.naturalWidth;
+        ih = frame.naturalHeight;
+      } else {
+        // ImageBitmap
+        iw = frame.width;
+        ih = frame.height;
+      }
+
+      const scale = Math.min(cw / iw, ch / ih); // object-fit: contain
       const dw = iw * scale;
       const dh = ih * scale;
       const dx = (cw - dw) / 2;
       const dy = (ch - dh) / 2;
-      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.drawImage(frame, dx, dy, dw, dh);
     },
     []
   );
 
-  /** Draw frame safely — falls back to last drawn frame if target isn't loaded yet */
   const drawSafeFrame = useCallback(
     (
       ctx: CanvasRenderingContext2D,
-      frames: HTMLImageElement[],
+      frames: FrameCache[],
       index: number,
       lastDrawnRef: React.MutableRefObject<number>,
-      cw: number,
-      ch: number,
+      cw: number, ch: number,
       alpha: number = 1
     ) => {
-      const img = frames[index];
+      const frame = frames[index];
       ctx.globalAlpha = alpha;
-      if (img && img.complete && img.naturalWidth > 0) {
-        drawImageToCanvas(ctx, img, cw, ch);
+      
+      let isReady = false;
+      if (frame) {
+        if ('naturalWidth' in frame) {
+          isReady = frame.complete && frame.naturalWidth > 0;
+        } else {
+          isReady = true; // ImageBitmap is always ready
+        }
+      }
+
+      if (isReady) {
+        drawImageToCanvas(ctx, frame, cw, ch);
         lastDrawnRef.current = index;
       } else {
-        // Fall back to last successfully drawn frame to prevent jumps
         const fallback = frames[lastDrawnRef.current];
-        if (fallback && fallback.complete && fallback.naturalWidth > 0) {
+        if (fallback) {
           drawImageToCanvas(ctx, fallback, cw, ch);
         }
       }
@@ -132,258 +138,149 @@ export default function HeroScrub() {
     [drawImageToCanvas]
   );
 
-  // Master draw function — handles intro, transition cross-fade, and campus phases
+  /* ─── Unified Frame Renderer ─── */
   const drawFrame = useCallback(
-    (scrollProgress: number) => {
-      // 1. Calculate which phase we are in
-      const introDuration = 0.4;
-      const transDuration = 0.15;
-      const transStart = introDuration;
-      const transEnd = introDuration + transDuration;
-
-      let introProgress = 0;
-      let campusProgress = 0;
-      let introAlpha = 1;
-      let campusAlpha = 0;
-
-      if (scrollProgress < transStart) {
-        currentPhaseRef.current = 'intro';
-        introProgress = scrollProgress / introDuration;
-      } else if (scrollProgress >= transStart && scrollProgress < transEnd) {
-        currentPhaseRef.current = 'transition';
-        introProgress = 1;
-        const localP = (scrollProgress - transStart) / transDuration;
-        campusProgress = localP;
-        introAlpha = 1 - localP;
-        campusAlpha = localP;
-      } else {
-        currentPhaseRef.current = 'campus';
-        const localP = (scrollProgress - transEnd) / (1 - transEnd);
-        campusProgress = localP;
-        introAlpha = 0;
-        campusAlpha = 1;
-      }
-
-      const introCount = introFramesRef.current.length;
-      const campusCount = campusFramesRef.current.length;
-
-      const introIndex = Math.min(
-        Math.floor(introProgress * introCount),
-        introCount > 0 ? introCount - 1 : 0
-      );
-
-      const campusIndex = Math.min(
-        Math.floor(campusProgress * campusCount),
-        campusCount > 0 ? campusCount - 1 : 0
-      );
-
-      // Map scroll progress back to the 330-frame global timeline so text overlays sync perfectly
-      const globalIntroFrames = 150;
-      const globalCampusFrames = 180;
-      let globalIndex = 0;
-      if (currentPhaseRef.current === 'campus') {
-        globalIndex = globalIntroFrames + Math.floor(campusProgress * globalCampusFrames);
-      } else {
-        globalIndex = Math.floor(introProgress * globalIntroFrames);
-      }
-      
-      if (activeTimelineIndexRef.current !== globalIndex) {
-        activeTimelineIndexRef.current = globalIndex;
-        setActiveTimelineIndex(globalIndex);
-      }
-
-      // DOM SCROLLING FALLBACK FOR MOBILE
-      const isMobile = window.innerWidth < 768;
-      if (isMobile && domScrubRef.current) {
-        const dom = domScrubRef.current;
-        for (let i = 0; i < dom.children.length; i++) {
-          (dom.children[i] as HTMLElement).style.opacity = '0';
-        }
-        
-        if (introAlpha > 0 && introIndex < dom.children.length) {
-          const el = dom.children[introIndex] as HTMLElement;
-          if (el) el.style.opacity = introAlpha.toString();
-        }
-        
-        const campusDomIndex = introCount + campusIndex;
-        if (campusAlpha > 0 && campusDomIndex < dom.children.length) {
-          const el = dom.children[campusDomIndex] as HTMLElement;
-          if (el) el.style.opacity = campusAlpha.toString();
-        }
-        return;
-      }
-
+    (progress: number) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-
       const { width: cw, height: ch } = canvas;
+      
       ctx.clearRect(0, 0, cw, ch);
-
-      // Background fill for portrait letterbox regions
       ctx.fillStyle = '#050506';
       ctx.fillRect(0, 0, cw, ch);
 
       const introFrames = introFramesRef.current;
       const campusFrames = campusFramesRef.current;
 
-      if (scrollProgress <= TRANSITION_START) {
-        /* ── Pure intro phase ── */
+      if (introFrames.length === 0 || campusFrames.length === 0) return;
+
+      let introProgress = 0;
+      let campusProgress = 0;
+
+      if (progress <= TRANSITION_START) {
         currentPhaseRef.current = 'intro';
-        const introProgress = scrollProgress / INTRO_END;
-        const introIndex = Math.min(
-          Math.floor(introProgress * introFrames.length),
-          introFrames.length - 1
-        );
-        drawSafeFrame(ctx, introFrames, introIndex, lastDrawnIntroRef, cw, ch);
-      } else if (scrollProgress >= TRANSITION_END) {
-        /* ── Pure campus phase ── */
+        introProgress = Math.min(progress / INTRO_END, 1);
+        const idx = Math.min(Math.floor(introProgress * introFrames.length), introFrames.length - 1);
+        drawSafeFrame(ctx, introFrames, idx, lastDrawnIntroRef, cw, ch);
+      } else if (progress >= TRANSITION_END) {
         currentPhaseRef.current = 'campus';
-        const campusProgress = (scrollProgress - CAMPUS_START) / (1 - CAMPUS_START);
-        const campusIndex = Math.min(
-          Math.floor(campusProgress * campusFrames.length),
-          campusFrames.length - 1
-        );
-        drawSafeFrame(ctx, campusFrames, campusIndex, lastDrawnCampusRef, cw, ch);
+        campusProgress = Math.min((progress - CAMPUS_START) / (1 - CAMPUS_START), 1);
+        const idx = Math.min(Math.floor(campusProgress * campusFrames.length), campusFrames.length - 1);
+        drawSafeFrame(ctx, campusFrames, idx, lastDrawnCampusRef, cw, ch);
       } else {
-        /* ── Cross-fade transition ── */
         currentPhaseRef.current = 'transition';
-        const fadeProgress = (scrollProgress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
-        const easedFade = fadeProgress * fadeProgress * (3 - 2 * fadeProgress); // smoothstep
-
-        // Intro frame (fading out)
-        const introProgress = scrollProgress / INTRO_END;
-        const introIndex = Math.min(
-          Math.floor(introProgress * introFrames.length),
-          introFrames.length - 1
-        );
-        drawSafeFrame(ctx, introFrames, introIndex, lastDrawnIntroRef, cw, ch, 1 - easedFade);
-
-        // Campus frame (fading in)
-        const campusProgress = (scrollProgress - CAMPUS_START) / (1 - CAMPUS_START);
-        const campusIndex = Math.max(
-          0,
-          Math.min(
-            Math.floor(campusProgress * campusFrames.length),
-            campusFrames.length - 1
-          )
-        );
-        drawSafeFrame(ctx, campusFrames, campusIndex, lastDrawnCampusRef, cw, ch, easedFade);
-
+        introProgress = Math.min(progress / INTRO_END, 1);
+        campusProgress = Math.max(0, (progress - CAMPUS_START) / (1 - CAMPUS_START));
+        
+        const fadeProgress = (progress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
+        const fade = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+        
+        const iIdx = Math.min(Math.floor(introProgress * introFrames.length), introFrames.length - 1);
+        const cIdx = Math.max(0, Math.min(Math.floor(campusProgress * campusFrames.length), campusFrames.length - 1));
+        
+        drawSafeFrame(ctx, introFrames, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
+        drawSafeFrame(ctx, campusFrames, cIdx, lastDrawnCampusRef, cw, ch, fade);
         ctx.globalAlpha = 1;
       }
     },
     [drawSafeFrame]
   );
 
-  // Preload frame images with full load tracking
+  /* ─── Robust Image Preloader with ImageBitmap Caching ─── */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
     const isMobile = window.innerWidth < 768;
     const lowEnd = isLowEndDevice();
 
-    // --- Intro frames ---
-    const introCount = lowEnd
-      ? INTRO_FRAMES_LOW_END
-      : isMobile
-        ? INTRO_FRAMES_MOBILE
-        : INTRO_FRAMES_DESKTOP;
-
-    const introStep = lowEnd || isMobile ? Math.floor(INTRO_FRAMES_DESKTOP / introCount) : 1;
-    const introImages: HTMLImageElement[] = [];
-
-    // --- Campus frames ---
-    const campusCount = lowEnd
-      ? CAMPUS_FRAMES_LOW_END
-      : isMobile
-        ? CAMPUS_FRAMES_MOBILE
-        : CAMPUS_FRAMES_DESKTOP;
-
-    const campusStep = lowEnd || isMobile ? Math.floor(CAMPUS_FRAMES_DESKTOP / campusCount) : 1;
-    const campusImages: HTMLImageElement[] = [];
+    const introCount = (isMobile || lowEnd) ? MOBILE_INTRO_COUNT : INTRO_TOTAL;
+    const campusCount = (isMobile || lowEnd) ? MOBILE_CAMPUS_COUNT : CAMPUS_TOTAL;
+    const introStep = (isMobile || lowEnd) ? Math.max(1, Math.floor(INTRO_TOTAL / introCount)) : 1;
+    const campusStep = (isMobile || lowEnd) ? Math.max(1, Math.floor(CAMPUS_TOTAL / campusCount)) : 1;
 
     const totalFrames = introCount + campusCount;
     let loadedCount = 0;
-    let firstDrawDone = false;
+    
+    // Arrays to hold the cache
+    const loadedIntroFrames: FrameCache[] = new Array(introCount).fill(null);
+    const loadedCampusFrames: FrameCache[] = new Array(campusCount).fill(null);
 
-    const onFrameLoad = () => {
+    const onProgress = () => {
       loadedCount++;
-      const pct = Math.round((loadedCount / totalFrames) * 100);
-      setLoadProgress(pct);
+      setLoadProgress(Math.min(100, Math.round((loadedCount / totalFrames) * 100)));
 
-      if (!firstDrawDone && loadedCount >= 1) {
-        firstDrawDone = true;
-        drawFrame(0); // Just draw the first frame quietly in the background
-      }
-
-      // Unlock site ONLY when 100% of frames are fully loaded and decoded
+      // Strict Loading Gate: Unlock ONLY when 100% of frames are downloaded and decoded to VRAM
       if (loadedCount >= totalFrames) {
-        setIsLoaded(true);
-        setIsAllLoaded(true);
+        introFramesRef.current = loadedIntroFrames;
+        campusFramesRef.current = loadedCampusFrames;
+        // Small delay to ensure React commits the UI and Canvas is ready
+        setTimeout(() => {
+          setIsLoaded(true);
+          drawFrame(0);
+        }, 100);
       }
     };
 
-    // Load intro frames
-    for (let i = 0; i < introCount; i++) {
-      const img = new window.Image();
-      const frameNum = (isMobile || lowEnd) ? (i * introStep + 1) : (i + 1);
-      img.src = getIntroFrameSrc(frameNum, isMobile);
+    // VRAM caching logic using createImageBitmap (guarantees zero-stutter on iOS Safari)
+    const loadFrameToVRAM = async (src: string, targetArray: FrameCache[], index: number) => {
+      try {
+        if (typeof window.createImageBitmap !== 'undefined') {
+          const res = await fetch(src);
+          if (!res.ok) throw new Error('Fetch failed');
+          const blob = await res.blob();
+          const bitmap = await window.createImageBitmap(blob);
+          targetArray[index] = bitmap;
+          onProgress();
+          return;
+        }
+      } catch (e) {
+        // Fallback to HTMLImageElement if fetch or createImageBitmap fails
+      }
       
-      // Force off-main-thread decoding to eliminate scroll stutter
+      const img = new window.Image();
+      img.src = src;
       if (img.decode) {
         img.decode().then(() => {
-          if ((isMobile || lowEnd) && domScrubRef.current) {
-            img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
-            img.style.willChange = 'opacity';
-            domScrubRef.current.appendChild(img);
-          }
-          onFrameLoad();
-        }).catch(onFrameLoad);
+          targetArray[index] = img;
+          onProgress();
+        }).catch(() => {
+          img.onload = () => { targetArray[index] = img; onProgress(); };
+          img.onerror = onProgress; // Count as loaded to not block UI forever
+        });
       } else {
-        if ((isMobile || lowEnd) && domScrubRef.current) {
-          img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
-          img.style.willChange = 'opacity';
-          domScrubRef.current.appendChild(img);
-        }
-        img.onload = onFrameLoad;
-        img.onerror = onFrameLoad;
+        img.onload = () => { targetArray[index] = img; onProgress(); };
+        img.onerror = onProgress;
       }
-      introImages.push(img);
-    }
-    introFramesRef.current = introImages;
+    };
 
-    // Load campus frames
-    for (let i = 0; i < campusCount; i++) {
-      const img = new window.Image();
-      const frameNum = (isMobile || lowEnd) ? (i * campusStep + 1) : (i + 1);
-      img.src = getCampusFrameSrc(frameNum, isMobile);
+    // Batch loading to prevent network choking (load 10 at a time)
+    const loadAll = async () => {
+      const queue: (() => Promise<void>)[] = [];
       
-      if (img.decode) {
-        img.decode().then(() => {
-          if ((isMobile || lowEnd) && domScrubRef.current) {
-            img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
-            img.style.willChange = 'opacity';
-            domScrubRef.current.appendChild(img);
-          }
-          onFrameLoad();
-        }).catch(onFrameLoad);
-      } else {
-        if ((isMobile || lowEnd) && domScrubRef.current) {
-          img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
-          img.style.willChange = 'opacity';
-          domScrubRef.current.appendChild(img);
-        }
-        img.onload = onFrameLoad;
-        img.onerror = onFrameLoad;
+      for (let i = 0; i < introCount; i++) {
+        const frameNum = (isMobile || lowEnd) ? (i * introStep + 1) : (i + 1);
+        queue.push(() => loadFrameToVRAM(getIntroFrameSrc(frameNum, isMobile), loadedIntroFrames, i));
       }
-      campusImages.push(img);
-    }
-    campusFramesRef.current = campusImages;
+      
+      for (let i = 0; i < campusCount; i++) {
+        const frameNum = (isMobile || lowEnd) ? (i * campusStep + 1) : (i + 1);
+        queue.push(() => loadFrameToVRAM(getCampusFrameSrc(frameNum, isMobile), loadedCampusFrames, i));
+      }
+
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < queue.length; i += BATCH_SIZE) {
+        const batch = queue.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(task => task()));
+      }
+    };
+
+    loadAll();
+
   }, [prefersReducedMotion, drawFrame]);
 
-  // Setup ScrollTrigger with RAF VSYNC batching and zero scroll-tick React re-renders
+  /* ─── ScrollTrigger Setup ─── */
   useEffect(() => {
     if (prefersReducedMotion || !isLoaded) return;
 
@@ -395,7 +292,7 @@ export default function HeroScrub() {
     const isMobile = window.innerWidth < 768;
     const lowEnd = isLowEndDevice();
 
-    // Size the canvas — cap DPR to 1 on mobile for performance
+    // Size the unified canvas — limit DPR to save GPU bandwidth
     const resizeCanvas = () => {
       const maxDpr = isMobile || lowEnd ? 1 : 2;
       const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
@@ -407,26 +304,23 @@ export default function HeroScrub() {
       canvas.style.height = `${h}px`;
       drawFrame(lastProgressRef.current);
     };
-
+    
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas, { passive: true });
 
     const timeline = content.heroOverlayTimeline;
-    let pendingProgress: number | null = null;
-    let isDrawPending = false;
 
-    // Pin the sticky container and scrub frames smoothly
     const trigger = ScrollTrigger.create({
       trigger: container,
       start: 'top top',
       end: 'bottom bottom',
       pin: sticky,
-      scrub: true, // Native touch scroll gets jittery with artificial scrub delay
+      scrub: true,
       onUpdate: (self) => {
         const progress = self.progress;
         lastProgressRef.current = progress;
 
-        // 1. Update overlay beat ONLY when timeline index changes
+        // 1. Perfectly synchronize text overlay based on raw scroll progress
         const tIndex = timeline.findIndex(
           (frame) => progress >= frame.scrollStart && progress <= frame.scrollEnd
         );
@@ -435,38 +329,36 @@ export default function HeroScrub() {
             ? timeline.length - 1
             : tIndex;
 
-        if (resolvedIndex !== -1 && resolvedIndex !== activeTimelineIndexRef.current) {
+        if (resolvedIndex !== activeTimelineIndexRef.current) {
           activeTimelineIndexRef.current = resolvedIndex;
           setActiveTimelineIndex(resolvedIndex);
         }
 
-        // 2. Direct DOM update for scroll cue visibility
+        // 2. Scroll cue visibility
         if (cueRef.current) {
           cueRef.current.style.opacity = progress < 0.98 ? '1' : '0';
         }
 
-        // 3. Direct DOM update for glow overlay
+        // 3. Glow overlay
         if (glowRef.current) {
           if (progress >= GLOW_SCROLL_START && progress <= GLOW_SCROLL_END) {
             const glowMid = (GLOW_SCROLL_START + GLOW_SCROLL_END) / 2;
             const glowHalf = (GLOW_SCROLL_END - GLOW_SCROLL_START) / 2;
             const dist = Math.abs(progress - glowMid);
-            const intensity = 1 - (dist / glowHalf); // 0 at edges, 1 at center
-            glowRef.current.style.opacity = String(Math.max(0, intensity * 0.85));
+            glowRef.current.style.opacity = String(Math.max(0, (1 - dist / glowHalf) * 0.85));
           } else {
             glowRef.current.style.opacity = '0';
           }
         }
 
-        // 4. Draw canvas synchronously with GSAP ticker (which is already inside rAF)
-        // Wrapping this in another rAF causes a 1-frame lag jitter against native mobile scroll!
+        // 4. Draw canvas synchronously
         drawFrame(progress);
       },
     });
 
     return () => {
-      window.removeEventListener('resize', resizeCanvas);
       trigger.kill();
+      window.removeEventListener('resize', resizeCanvas);
     };
   }, [prefersReducedMotion, isLoaded, drawFrame]);
 
@@ -493,10 +385,10 @@ export default function HeroScrub() {
       className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]"
     >
       <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden">
-        {/* Ambient gold glow behind portrait canvas */}
+        {/* Ambient gold glow */}
         <div className="ambient-blob ambient-blob-gold w-[320px] h-[320px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-25" />
 
-        {/* Poster placeholder until first frame loads */}
+        {/* Poster placeholder */}
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${
             isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
@@ -511,20 +403,14 @@ export default function HeroScrub() {
           />
         </div>
 
-        {/* DOM-based image sequence for mobile (bypasses iOS Canvas stutter) */}
-        <div 
-          ref={domScrubRef} 
-          className="absolute inset-0 w-full h-full md:hidden bg-[#050506]"
-        />
-
-        {/* Frame-sequence canvas (Desktop only) */}
+        {/* Unified High-Performance GPU Canvas */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full hidden md:block"
+          className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
           style={{ willChange: 'transform' }}
         />
 
-        {/* ── Golden glow overlay for grand intro moments (frames 53-108) ── */}
+        {/* Golden glow overlay for grand intro moments */}
         <div
           ref={glowRef}
           className="absolute inset-0 pointer-events-none z-[5]"
@@ -534,7 +420,6 @@ export default function HeroScrub() {
             transition: 'opacity 0.5s ease-out',
           }}
         >
-          {/* Radial golden glow */}
           <div
             className="absolute inset-0"
             style={{
@@ -547,7 +432,6 @@ export default function HeroScrub() {
               animation: 'glow-breathe 3s ease-in-out infinite',
             }}
           />
-          {/* Animated rotating rays */}
           <div
             className="absolute inset-0"
             style={{
@@ -570,7 +454,6 @@ export default function HeroScrub() {
               mixBlendMode: 'screen',
             }}
           />
-          {/* Top/bottom vignette for the glow */}
           <div
             className="absolute inset-0"
             style={{
@@ -579,19 +462,19 @@ export default function HeroScrub() {
           />
         </div>
 
-        {/* Hardware-accelerated gradient overlay for text readability & top/bottom feathering */}
+        {/* Gradient overlay for text readability */}
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/40 via-transparent to-[#050506]/60" />
 
-        {/* Hero text overlay (updates only when timeline beat changes) */}
+        {/* Hero text overlay — completely unified synchronization */}
         <HeroOverlay activeFrameIndex={activeTimelineIndex} />
 
-        {/* Skip to Events button — bottom right */}
+        {/* Skip to Events */}
         <button
           onClick={() => {
             const eventsSection = document.getElementById('events');
             if (eventsSection) eventsSection.scrollIntoView({ behavior: 'smooth' });
           }}
-          className="cursor-interact absolute bottom-16 sm:bottom-20 right-4 sm:right-8 z-20 group inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-mono tracking-wider uppercase transition-all duration-300 pointer-events-auto min-h-[44px] min-w-[44px]"
+          className={`cursor-interact absolute bottom-16 sm:bottom-20 right-4 sm:right-8 z-20 group inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-mono tracking-wider uppercase transition-all duration-1000 pointer-events-auto min-h-[44px] min-w-[44px] ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
           style={{
             background: 'rgba(5, 5, 6, 0.4)',
             backdropFilter: 'blur(16px)',
@@ -616,10 +499,10 @@ export default function HeroScrub() {
           <ArrowDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform group-hover:translate-y-0.5" />
         </button>
 
-        {/* Bottom scroll cue — direct DOM opacity controlled */}
+        {/* Scroll cue */}
         <div
           ref={cueRef}
-          className="absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-opacity duration-300 pointer-events-none"
+          className={`absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-all duration-1000 pointer-events-none ${isLoaded ? 'opacity-100' : 'opacity-0 translate-y-4'}`}
         >
           <span
             className="text-[10px] sm:text-xs font-mono tracking-[0.2em] uppercase mb-2"
@@ -630,10 +513,10 @@ export default function HeroScrub() {
           <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce" style={{ color: '#D4AF7A' }} />
         </div>
 
-        {/* ── Loading overlay — blocks interaction until all frames are preloaded ── */}
+        {/* ── STRICT LOADING GATE — blocks completely until 100% VRAM cache is filled ── */}
         <div
-          className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#050506] transition-opacity duration-700 ${
-            isAllLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#050506] transition-opacity duration-1000 ${
+            isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
         >
           <span
@@ -652,19 +535,26 @@ export default function HeroScrub() {
           >
             Silver Jubilee
           </p>
-          <div className="mt-6 w-40 sm:w-48 h-[2px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+          <p
+            className="mt-6 font-mono text-[10px] sm:text-xs tracking-wider uppercase animate-pulse"
+            style={{ color: '#F5F3EE' }}
+          >
+            Loading Site Content... Please Wait
+          </p>
+          <div className="mt-4 w-40 sm:w-48 h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
             <div
               className="h-full rounded-full"
               style={{
                 width: `${loadProgress}%`,
                 background: 'linear-gradient(90deg, #D4AF7A, #E8C992)',
-                transition: 'width 0.3s ease-out',
+                transition: 'width 0.2s ease-out',
+                boxShadow: '0 0 10px rgba(212,175,122,0.5)'
               }}
             />
           </div>
           <span
             className="mt-2 font-mono text-[9px] tracking-widest"
-            style={{ color: 'rgba(212,175,122,0.3)' }}
+            style={{ color: 'rgba(212,175,122,0.6)' }}
           >
             {loadProgress}%
           </span>
