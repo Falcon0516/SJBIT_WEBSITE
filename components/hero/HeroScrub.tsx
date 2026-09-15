@@ -93,8 +93,8 @@ export default function HeroScrub() {
     (ctx: CanvasRenderingContext2D, img: HTMLImageElement, cw: number, ch: number) => {
       if (!img || !img.complete || img.naturalWidth === 0) return;
       const { naturalWidth: iw, naturalHeight: ih } = img;
-      // Use object-fit: cover logic for all orientations
-      const scale = Math.max(cw / iw, ch / ih);
+      // Use object-fit: contain logic so the landscape animation is fully visible on portrait
+      const scale = Math.min(cw / iw, ch / ih);
       const dw = iw * scale;
       const dh = ih * scale;
       const dx = (cw - dw) / 2;
@@ -319,7 +319,7 @@ export default function HeroScrub() {
       start: 'top top',
       end: 'bottom bottom',
       pin: sticky,
-      scrub: isMobile ? 0.3 : true,
+      scrub: true, // Native touch scroll gets jittery with artificial scrub delay
       onUpdate: (self) => {
         const progress = self.progress;
         lastProgressRef.current = progress;
@@ -356,17 +356,9 @@ export default function HeroScrub() {
           }
         }
 
-        // 4. Batch canvas draws to VSYNC via requestAnimationFrame
-        pendingProgress = progress;
-        if (!isDrawPending) {
-          isDrawPending = true;
-          requestAnimationFrame(() => {
-            if (pendingProgress !== null) {
-              drawFrame(pendingProgress);
-            }
-            isDrawPending = false;
-          });
-        }
+        // 4. Draw canvas synchronously with GSAP ticker (which is already inside rAF)
+        // Wrapping this in another rAF causes a 1-frame lag jitter against native mobile scroll!
+        drawFrame(progress);
       },
     });
 
