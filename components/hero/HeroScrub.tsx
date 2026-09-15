@@ -177,6 +177,21 @@ export default function HeroScrub() {
         campusCount > 0 ? campusCount - 1 : 0
       );
 
+      // Map scroll progress back to the 330-frame global timeline so text overlays sync perfectly
+      const globalIntroFrames = 150;
+      const globalCampusFrames = 180;
+      let globalIndex = 0;
+      if (currentPhaseRef.current === 'campus') {
+        globalIndex = globalIntroFrames + Math.floor(campusProgress * globalCampusFrames);
+      } else {
+        globalIndex = Math.floor(introProgress * globalIntroFrames);
+      }
+      
+      if (activeTimelineIndexRef.current !== globalIndex) {
+        activeTimelineIndexRef.current = globalIndex;
+        setActiveTimelineIndex(globalIndex);
+      }
+
       // DOM SCROLLING FALLBACK FOR MOBILE
       const isMobile = window.innerWidth < 768;
       if (isMobile && domScrubRef.current) {
@@ -194,15 +209,6 @@ export default function HeroScrub() {
         if (campusAlpha > 0 && campusDomIndex < dom.children.length) {
           const el = dom.children[campusDomIndex] as HTMLElement;
           if (el) el.style.opacity = campusAlpha.toString();
-        }
-        
-        // Update overlay
-        const totalIndex = currentPhaseRef.current === 'campus' 
-          ? introCount + campusIndex 
-          : introIndex;
-        if (activeTimelineIndexRef.current !== totalIndex) {
-          activeTimelineIndexRef.current = totalIndex;
-          setActiveTimelineIndex(totalIndex);
         }
         return;
       }
@@ -307,15 +313,14 @@ export default function HeroScrub() {
       const pct = Math.round((loadedCount / totalFrames) * 100);
       setLoadProgress(pct);
 
-      // Show canvas after first frame loads (poster swap)
       if (!firstDrawDone && loadedCount >= 1) {
         firstDrawDone = true;
-        setIsLoaded(true);
-        drawFrame(0);
+        drawFrame(0); // Just draw the first frame quietly in the background
       }
 
-      // All frames loaded — unlock smooth scrolling
+      // Unlock site ONLY when 100% of frames are fully loaded and decoded
       if (loadedCount >= totalFrames) {
+        setIsLoaded(true);
         setIsAllLoaded(true);
       }
     };
