@@ -212,7 +212,7 @@ export default function HeroScrub() {
         ? INTRO_FRAMES_MOBILE
         : INTRO_FRAMES_DESKTOP;
 
-    const introStep = lowEnd ? 5 : isMobile ? 5 : 1;
+    const introStep = lowEnd || isMobile ? Math.floor(INTRO_FRAMES_DESKTOP / introCount) : 1;
     const introImages: HTMLImageElement[] = [];
 
     // --- Campus frames ---
@@ -222,7 +222,7 @@ export default function HeroScrub() {
         ? CAMPUS_FRAMES_MOBILE
         : CAMPUS_FRAMES_DESKTOP;
 
-    const campusStep = lowEnd ? 5 : isMobile ? 5 : 1;
+    const campusStep = lowEnd || isMobile ? Math.floor(CAMPUS_FRAMES_DESKTOP / campusCount) : 1;
     const campusImages: HTMLImageElement[] = [];
 
     const totalFrames = introCount + campusCount;
@@ -250,10 +250,16 @@ export default function HeroScrub() {
     // Load intro frames
     for (let i = 0; i < introCount; i++) {
       const img = new window.Image();
-      const frameNum = isMobile || lowEnd ? i * introStep + 1 : i + 1;
+      const frameNum = (isMobile || lowEnd) ? (i * introStep + 1) : (i + 1);
       img.src = getIntroFrameSrc(frameNum, isMobile);
-      img.onload = onFrameLoad;
-      img.onerror = onFrameLoad; // Count errors too to avoid blocking forever
+      
+      // Force off-main-thread decoding to eliminate scroll stutter
+      if (img.decode) {
+        img.decode().then(onFrameLoad).catch(onFrameLoad);
+      } else {
+        img.onload = onFrameLoad;
+        img.onerror = onFrameLoad;
+      }
       introImages.push(img);
     }
     introFramesRef.current = introImages;
@@ -261,10 +267,15 @@ export default function HeroScrub() {
     // Load campus frames
     for (let i = 0; i < campusCount; i++) {
       const img = new window.Image();
-      const frameNum = isMobile || lowEnd ? i * campusStep + 1 : i + 1;
+      const frameNum = (isMobile || lowEnd) ? (i * campusStep + 1) : (i + 1);
       img.src = getCampusFrameSrc(frameNum, isMobile);
-      img.onload = onFrameLoad;
-      img.onerror = onFrameLoad;
+      
+      if (img.decode) {
+        img.decode().then(onFrameLoad).catch(onFrameLoad);
+      } else {
+        img.onload = onFrameLoad;
+        img.onerror = onFrameLoad;
+      }
       campusImages.push(img);
     }
     campusFramesRef.current = campusImages;
