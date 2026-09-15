@@ -88,6 +88,7 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
           muted
           playsInline
           loop
+          autoPlay
           preload="metadata"
           className="w-full h-full object-cover"
           style={{

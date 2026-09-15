@@ -58,6 +58,7 @@ export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const domScrubRef = useRef<HTMLDivElement>(null);
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
@@ -134,6 +135,78 @@ export default function HeroScrub() {
   // Master draw function — handles intro, transition cross-fade, and campus phases
   const drawFrame = useCallback(
     (scrollProgress: number) => {
+      // 1. Calculate which phase we are in
+      const introDuration = 0.4;
+      const transDuration = 0.15;
+      const transStart = introDuration;
+      const transEnd = introDuration + transDuration;
+
+      let introProgress = 0;
+      let campusProgress = 0;
+      let introAlpha = 1;
+      let campusAlpha = 0;
+
+      if (scrollProgress < transStart) {
+        currentPhaseRef.current = 'intro';
+        introProgress = scrollProgress / introDuration;
+      } else if (scrollProgress >= transStart && scrollProgress < transEnd) {
+        currentPhaseRef.current = 'transition';
+        introProgress = 1;
+        const localP = (scrollProgress - transStart) / transDuration;
+        campusProgress = localP;
+        introAlpha = 1 - localP;
+        campusAlpha = localP;
+      } else {
+        currentPhaseRef.current = 'campus';
+        const localP = (scrollProgress - transEnd) / (1 - transEnd);
+        campusProgress = localP;
+        introAlpha = 0;
+        campusAlpha = 1;
+      }
+
+      const introCount = introFramesRef.current.length;
+      const campusCount = campusFramesRef.current.length;
+
+      const introIndex = Math.min(
+        Math.floor(introProgress * introCount),
+        introCount > 0 ? introCount - 1 : 0
+      );
+
+      const campusIndex = Math.min(
+        Math.floor(campusProgress * campusCount),
+        campusCount > 0 ? campusCount - 1 : 0
+      );
+
+      // DOM SCROLLING FALLBACK FOR MOBILE
+      const isMobile = window.innerWidth < 768;
+      if (isMobile && domScrubRef.current) {
+        const dom = domScrubRef.current;
+        for (let i = 0; i < dom.children.length; i++) {
+          (dom.children[i] as HTMLElement).style.opacity = '0';
+        }
+        
+        if (introAlpha > 0 && introIndex < dom.children.length) {
+          const el = dom.children[introIndex] as HTMLElement;
+          if (el) el.style.opacity = introAlpha.toString();
+        }
+        
+        const campusDomIndex = introCount + campusIndex;
+        if (campusAlpha > 0 && campusDomIndex < dom.children.length) {
+          const el = dom.children[campusDomIndex] as HTMLElement;
+          if (el) el.style.opacity = campusAlpha.toString();
+        }
+        
+        // Update overlay
+        const totalIndex = currentPhaseRef.current === 'campus' 
+          ? introCount + campusIndex 
+          : introIndex;
+        if (activeTimelineIndexRef.current !== totalIndex) {
+          activeTimelineIndexRef.current = totalIndex;
+          setActiveTimelineIndex(totalIndex);
+        }
+        return;
+      }
+
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
@@ -255,8 +328,20 @@ export default function HeroScrub() {
       
       // Force off-main-thread decoding to eliminate scroll stutter
       if (img.decode) {
-        img.decode().then(onFrameLoad).catch(onFrameLoad);
+        img.decode().then(() => {
+          if ((isMobile || lowEnd) && domScrubRef.current) {
+            img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
+            img.style.willChange = 'opacity';
+            domScrubRef.current.appendChild(img);
+          }
+          onFrameLoad();
+        }).catch(onFrameLoad);
       } else {
+        if ((isMobile || lowEnd) && domScrubRef.current) {
+          img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
+          img.style.willChange = 'opacity';
+          domScrubRef.current.appendChild(img);
+        }
         img.onload = onFrameLoad;
         img.onerror = onFrameLoad;
       }
@@ -271,8 +356,20 @@ export default function HeroScrub() {
       img.src = getCampusFrameSrc(frameNum, isMobile);
       
       if (img.decode) {
-        img.decode().then(onFrameLoad).catch(onFrameLoad);
+        img.decode().then(() => {
+          if ((isMobile || lowEnd) && domScrubRef.current) {
+            img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
+            img.style.willChange = 'opacity';
+            domScrubRef.current.appendChild(img);
+          }
+          onFrameLoad();
+        }).catch(onFrameLoad);
       } else {
+        if ((isMobile || lowEnd) && domScrubRef.current) {
+          img.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0';
+          img.style.willChange = 'opacity';
+          domScrubRef.current.appendChild(img);
+        }
         img.onload = onFrameLoad;
         img.onerror = onFrameLoad;
       }
@@ -409,10 +506,16 @@ export default function HeroScrub() {
           />
         </div>
 
-        {/* Frame-sequence canvas */}
+        {/* DOM-based image sequence for mobile (bypasses iOS Canvas stutter) */}
+        <div 
+          ref={domScrubRef} 
+          className="absolute inset-0 w-full h-full md:hidden bg-[#050506]"
+        />
+
+        {/* Frame-sequence canvas (Desktop only) */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
+          className="absolute inset-0 w-full h-full hidden md:block"
           style={{ willChange: 'transform' }}
         />
 
