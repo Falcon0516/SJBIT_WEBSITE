@@ -480,7 +480,7 @@ export default function HeroScrub() {
         </div>
 
         {/* Hardware-accelerated gradient overlay for text readability & top/bottom feathering */}
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/70 via-transparent to-[#050506]/70" />
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/40 via-transparent to-[#050506]/60" />
 
         {/* Hero text overlay (updates only when timeline beat changes) */}
         <HeroOverlay activeFrameIndex={activeTimelineIndex} />
