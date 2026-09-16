@@ -56,8 +56,8 @@ export default function HeroScrub() {
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
-  const introFramesRef = useRef<HTMLImageElement[]>([]);
-  const campusFramesRef = useRef<HTMLImageElement[]>([]);
+  const introFramesRef = useRef<(HTMLImageElement | HTMLCanvasElement)[]>([]);
+  const campusFramesRef = useRef<(HTMLImageElement | HTMLCanvasElement)[]>([]);
   const currentPhaseRef = useRef<'intro' | 'transition' | 'campus'>('intro');
   const activeTimelineIndexRef = useRef(-1);
   const lastProgressRef = useRef(0);
@@ -79,15 +79,24 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  /* ─── Canvas Draw Helpers ─── */
   const drawImageToCanvas = useCallback(
-    (ctx: CanvasRenderingContext2D, img: HTMLImageElement, cw: number, ch: number) => {
-      if (!img || !img.complete || img.naturalWidth === 0) return;
-      const { naturalWidth: iw, naturalHeight: ih } = img;
+    (ctx: CanvasRenderingContext2D, source: HTMLImageElement | HTMLCanvasElement, cw: number, ch: number) => {
+      if (!source) return;
+      
+      let iw, ih;
+      if (source instanceof HTMLImageElement) {
+        if (!source.complete || source.naturalWidth === 0) return;
+        iw = source.naturalWidth;
+        ih = source.naturalHeight;
+      } else {
+        iw = source.width;
+        ih = source.height;
+      }
+
       const scale = Math.min(cw / iw, ch / ih);
       const dw = iw * scale;
       const dh = ih * scale;
-      ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+      ctx.drawImage(source, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
     },
     []
   );
@@ -95,21 +104,31 @@ export default function HeroScrub() {
   const drawSafeFrame = useCallback(
     (
       ctx: CanvasRenderingContext2D,
-      frames: HTMLImageElement[],
+      frames: (HTMLImageElement | HTMLCanvasElement)[],
       index: number,
       lastDrawnRef: React.MutableRefObject<number>,
       cw: number,
       ch: number,
       alpha: number = 1
     ) => {
-      const img = frames[index];
+      const source = frames[index];
       ctx.globalAlpha = alpha;
-      if (img && img.complete && img.naturalWidth > 0) {
-        drawImageToCanvas(ctx, img, cw, ch);
+      
+      let isReady = false;
+      if (source instanceof HTMLImageElement) {
+        isReady = source.complete && source.naturalWidth > 0;
+      } else if (source instanceof HTMLCanvasElement) {
+        isReady = true;
+      }
+
+      if (isReady) {
+        drawImageToCanvas(ctx, source, cw, ch);
         lastDrawnRef.current = index;
       } else {
         const fallback = frames[lastDrawnRef.current];
-        if (fallback && fallback.complete) drawImageToCanvas(ctx, fallback, cw, ch);
+        if (fallback) {
+          drawImageToCanvas(ctx, fallback, cw, ch);
+        }
       }
     },
     [drawImageToCanvas]
@@ -184,8 +203,8 @@ export default function HeroScrub() {
     const totalFrames = introCount + campusCount;
     let loadedCount = 0;
 
-    const loadedIntro: HTMLImageElement[] = new Array(introCount).fill(null);
-    const loadedCampus: HTMLImageElement[] = new Array(campusCount).fill(null);
+    const loadedIntro: (HTMLImageElement | HTMLCanvasElement)[] = new Array(introCount).fill(null);
+    const loadedCampus: (HTMLImageElement | HTMLCanvasElement)[] = new Array(campusCount).fill(null);
 
     const onProgress = () => {
       loadedCount++;
@@ -205,19 +224,48 @@ export default function HeroScrub() {
     // Load image + force GPU decode using .decode()
     // .decode() guarantees the browser has fully decompressed the image
     // into its internal decoded bitmap cache BEFORE we ever try to draw it.
-    // This eliminates the "first-paint stall" that causes forward-scroll jank.
-    const loadAndDecode = async (src: string, target: HTMLImageElement[], index: number) => {
+    // HOWEVER, iOS WebKit aggressively evicts decoded bitmaps if memory gets tight.
+    // To prevent this, on mobile we draw the image to an offscreen canvas IMMEDIATELY.
+    // WebKit cannot garbage-collect living canvas buffers. This guarantees zero frame stall.
+    const loadAndDecode = async (src: string, target: (HTMLImageElement | HTMLCanvasElement)[], index: number) => {
       const img = new window.Image();
       img.src = src;
 
       try {
-        await img.decode(); // Forces full decode into browser bitmap cache
-        target[index] = img;
+        await img.decode();
+        
+        if (isMobile) {
+          const offscreen = document.createElement('canvas');
+          offscreen.width = img.naturalWidth;
+          offscreen.height = img.naturalHeight;
+          const oCtx = offscreen.getContext('2d');
+          if (oCtx) {
+            oCtx.drawImage(img, 0, 0);
+            target[index] = offscreen;
+          } else {
+            target[index] = img;
+          }
+        } else {
+          target[index] = img;
+        }
       } catch {
-        // If decode fails, try onload fallback
+        // Fallback
         await new Promise<void>((resolve) => {
           img.onload = () => {
-            target[index] = img;
+            if (isMobile) {
+              const offscreen = document.createElement('canvas');
+              offscreen.width = img.naturalWidth || img.width;
+              offscreen.height = img.naturalHeight || img.height;
+              const oCtx = offscreen.getContext('2d');
+              if (oCtx) {
+                oCtx.drawImage(img, 0, 0);
+                target[index] = offscreen;
+              } else {
+                target[index] = img;
+              }
+            } else {
+              target[index] = img;
+            }
             resolve();
           };
           img.onerror = () => resolve();
