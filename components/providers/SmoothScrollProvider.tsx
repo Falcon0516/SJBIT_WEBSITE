@@ -23,7 +23,12 @@ export default function SmoothScrollProvider({ children }: SmoothScrollProviderP
     // Hijacking touch with JavaScript smooth-scroll causes severe touch latency and choppiness.
     const isTouchDevice = 'ontouchstart' in window || (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
     if (isTouchDevice) {
-      // On mobile, keep default GSAP lag smoothing active for smooth ScrollTrigger interpolation
+      // Task 11: normalizeScroll MUST be invoked before any ScrollTrigger.create()
+      // calls anywhere on the page (HeroScrub, Navbar, etc). This provider mounts
+      // before all of them, making it the correct single invocation point.
+      // normalizeScroll intercepts touch scroll events and converts them to smooth,
+      // predictable updates — bypassing iOS Safari's momentum scroll throttling.
+      ScrollTrigger.normalizeScroll(true);
       gsap.ticker.lagSmoothing(500, 33);
       return;
     }

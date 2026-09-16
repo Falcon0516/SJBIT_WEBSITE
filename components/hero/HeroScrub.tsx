@@ -7,18 +7,15 @@ import HeroOverlay from './HeroOverlay';
 import Image from 'next/image';
 import { ChevronDown, ArrowDown } from 'lucide-react';
 import { content } from '@/lib/content';
+import { getDeviceTier, getTierConfig, type DeviceTier, type TierConfig } from '@/lib/device-tier';
 
 gsap.registerPlugin(ScrollTrigger);
 
-/* ─── Frame counts ─── */
+/* ─── Source frame counts (files on disk) ─── */
 const INTRO_TOTAL = 150;
 const CAMPUS_TOTAL = 180;
 
-// Mobile gets fewer frames but enough for smooth scrubbing
-const MOBILE_INTRO_COUNT = 24;
-const MOBILE_CAMPUS_COUNT = 30;
-
-/* ─── Scroll boundaries (same for desktop and mobile) ─── */
+/* ─── Scroll boundaries ─── */
 const INTRO_END = 0.30;
 const TRANSITION_START = 0.26;
 const TRANSITION_END = 0.34;
@@ -28,6 +25,13 @@ const CAMPUS_START = 0.30;
 const GLOW_SCROLL_START = (53 / 150) * INTRO_END;
 const GLOW_SCROLL_END = (108 / 150) * INTRO_END;
 
+/* ─── Debug instrumentation (stripped from production unless env var set) ─── */
+const DEBUG = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_ANIM === '1';
+function debugLog(...args: unknown[]) {
+  if (DEBUG) console.debug('[HeroScrub]', ...args);
+}
+
+/* ─── Frame source helpers ─── */
 function getIntroFrameSrc(index: number, isMobile: boolean): string {
   const pad = String(index).padStart(3, '0');
   return isMobile
@@ -42,13 +46,169 @@ function getCampusFrameSrc(index: number, isMobile: boolean): string {
     : `/frames/hero/frame-${pad}.webp`;
 }
 
-function isLowEndDevice(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const cores = navigator.hardwareConcurrency || 8;
-  const memory = 'deviceMemory' in navigator ? (navigator as any).deviceMemory : 8;
-  return cores <= 4 && memory <= 4;
+/* ─── Frame type (offscreen canvas or image) ─── */
+type FrameData = HTMLCanvasElement | HTMLImageElement | null;
+
+/* ─── Rolling Window Frame Manager ─── */
+class FrameManager {
+  private frames: FrameData[];
+  private srcs: string[];
+  private loading = new Set<number>();
+  private config: TierConfig;
+  private isMobile: boolean;
+  private paused = false;
+  private onFirstWindowReady: (() => void) | null = null;
+  private onProgressUpdate: ((loaded: number, total: number) => void) | null = null;
+  private totalLoaded = 0;
+
+  constructor(
+    srcs: string[],
+    config: TierConfig,
+    isMobile: boolean,
+    callbacks: {
+      onFirstWindowReady?: () => void;
+      onProgressUpdate?: (loaded: number, total: number) => void;
+    } = {}
+  ) {
+    this.frames = new Array(srcs.length).fill(null);
+    this.srcs = srcs;
+    this.config = config;
+    this.isMobile = isMobile;
+    this.onFirstWindowReady = callbacks.onFirstWindowReady || null;
+    this.onProgressUpdate = callbacks.onProgressUpdate || null;
+  }
+
+  get length() { return this.srcs.length; }
+  get loaded() { return this.totalLoaded; }
+
+  getFrame(index: number): FrameData {
+    return this.frames[index] ?? null;
+  }
+
+  /** Preload the first N frames (the "gate" window) and resolve when ready */
+  async preloadGate(): Promise<void> {
+    const gateCount = Math.min(this.config.gateFrameCount, this.srcs.length);
+    const batch: Promise<void>[] = [];
+    for (let i = 0; i < gateCount; i++) {
+      batch.push(this.loadFrame(i));
+      // Respect concurrency limit
+      if (batch.length >= this.config.batchConcurrency) {
+        await Promise.all(batch);
+        batch.length = 0;
+      }
+    }
+    if (batch.length > 0) await Promise.all(batch);
+    this.onFirstWindowReady?.();
+  }
+
+  /** Continue loading remaining frames in the background, prioritizing around currentIndex */
+  async preloadRemaining(startFrom: number = 0): Promise<void> {
+    // Load frames in order from startFrom, respecting concurrency
+    const batch: Promise<void>[] = [];
+    for (let i = 0; i < this.srcs.length; i++) {
+      if (this.paused) break;
+      const idx = (startFrom + i) % this.srcs.length;
+      if (this.frames[idx] !== null) continue; // Already loaded
+      batch.push(this.loadFrame(idx));
+      if (batch.length >= this.config.batchConcurrency) {
+        await Promise.all(batch);
+        batch.length = 0;
+        // Yield to main thread between batches
+        await new Promise<void>(r => setTimeout(r, 0));
+      }
+    }
+    if (batch.length > 0) await Promise.all(batch);
+  }
+
+  /** Ensure frames around the given index are loaded, evict distant ones on MEDIUM/LOW */
+  ensureWindow(currentIndex: number): void {
+    if (this.config.windowSize >= this.srcs.length) return; // HIGH tier: keep everything
+
+    const half = Math.floor(this.config.windowSize / 2);
+    const lo = Math.max(0, currentIndex - half);
+    const hi = Math.min(this.srcs.length - 1, currentIndex + half);
+
+    // Evict frames far outside the window
+    for (let i = 0; i < this.srcs.length; i++) {
+      if (i < lo - half || i > hi + half) {
+        if (this.frames[i] !== null) {
+          this.frames[i] = null; // Let GC reclaim
+        }
+      }
+    }
+
+    // Request any missing frames within the window (don't block on them)
+    for (let i = lo; i <= hi; i++) {
+      if (this.frames[i] === null && !this.loading.has(i)) {
+        this.loadFrame(i); // Fire-and-forget
+      }
+    }
+  }
+
+  /** Load a single frame */
+  private async loadFrame(index: number): Promise<void> {
+    if (this.frames[index] !== null || this.loading.has(index)) return;
+    this.loading.add(index);
+
+    const t0 = DEBUG ? performance.now() : 0;
+
+    try {
+      const img = new window.Image();
+      img.src = this.srcs[index];
+
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error(`Failed to load ${this.srcs[index]}`));
+      });
+
+      // Try decode for guaranteed bitmap caching
+      try { await img.decode(); } catch { /* decode not critical */ }
+
+      if (this.config.useOffscreenCache && this.isMobile) {
+        // Bake into offscreen canvas to prevent iOS WebKit eviction
+        const offscreen = document.createElement('canvas');
+        offscreen.width = img.naturalWidth;
+        offscreen.height = img.naturalHeight;
+        const oCtx = offscreen.getContext('2d');
+        if (oCtx) {
+          oCtx.drawImage(img, 0, 0);
+          this.frames[index] = offscreen;
+        } else {
+          this.frames[index] = img;
+        }
+      } else {
+        this.frames[index] = img;
+      }
+
+      this.totalLoaded++;
+      this.onProgressUpdate?.(this.totalLoaded, this.srcs.length);
+
+      if (DEBUG) {
+        debugLog(`Frame ${index} loaded in ${(performance.now() - t0).toFixed(1)}ms`);
+      }
+    } catch {
+      // Network error — don't block forever
+      this.totalLoaded++;
+      this.onProgressUpdate?.(this.totalLoaded, this.srcs.length);
+    } finally {
+      this.loading.delete(index);
+    }
+  }
+
+  pause() { this.paused = true; }
+  resume() { this.paused = false; }
+
+  /** Release all frames */
+  destroy() {
+    this.paused = true;
+    this.frames.fill(null);
+    this.loading.clear();
+  }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   COMPONENT
+   ═══════════════════════════════════════════════════════════ */
 export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
@@ -56,21 +216,23 @@ export default function HeroScrub() {
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
-  const introFramesRef = useRef<(HTMLImageElement | HTMLCanvasElement)[]>([]);
-  const campusFramesRef = useRef<(HTMLImageElement | HTMLCanvasElement)[]>([]);
+  const introMgrRef = useRef<FrameManager | null>(null);
+  const campusMgrRef = useRef<FrameManager | null>(null);
   const currentPhaseRef = useRef<'intro' | 'transition' | 'campus'>('intro');
   const activeTimelineIndexRef = useRef(-1);
   const lastProgressRef = useRef(0);
   const lastDrawnIntroRef = useRef(0);
   const lastDrawnCampusRef = useRef(0);
+  const tierRef = useRef<DeviceTier>('MEDIUM');
+  const configRef = useRef<TierConfig>(getTierConfig('MEDIUM'));
+  const introReleasedRef = useRef(false);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [activeTimelineIndex, setActiveTimelineIndex] = useState(-1);
 
-  const isMobileRef = useRef(false);
-
+  /* ─── Reduced motion detection ─── */
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     setPrefersReducedMotion(mq.matches);
@@ -79,11 +241,12 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  /* ─── Canvas draw helpers ─── */
   const drawImageToCanvas = useCallback(
-    (ctx: CanvasRenderingContext2D, source: HTMLImageElement | HTMLCanvasElement, cw: number, ch: number) => {
+    (ctx: CanvasRenderingContext2D, source: FrameData, cw: number, ch: number) => {
       if (!source) return;
-      
-      let iw, ih;
+
+      let iw: number, ih: number;
       if (source instanceof HTMLImageElement) {
         if (!source.complete || source.naturalWidth === 0) return;
         iw = source.naturalWidth;
@@ -104,28 +267,22 @@ export default function HeroScrub() {
   const drawSafeFrame = useCallback(
     (
       ctx: CanvasRenderingContext2D,
-      frames: (HTMLImageElement | HTMLCanvasElement)[],
+      mgr: FrameManager,
       index: number,
       lastDrawnRef: React.MutableRefObject<number>,
       cw: number,
       ch: number,
       alpha: number = 1
     ) => {
-      const source = frames[index];
+      const source = mgr.getFrame(index);
       ctx.globalAlpha = alpha;
-      
-      let isReady = false;
-      if (source instanceof HTMLImageElement) {
-        isReady = source.complete && source.naturalWidth > 0;
-      } else if (source instanceof HTMLCanvasElement) {
-        isReady = true;
-      }
 
-      if (isReady) {
+      if (source) {
         drawImageToCanvas(ctx, source, cw, ch);
         lastDrawnRef.current = index;
       } else {
-        const fallback = frames[lastDrawnRef.current];
+        // Frame not yet loaded — draw closest available fallback
+        const fallback = mgr.getFrame(lastDrawnRef.current);
         if (fallback) {
           drawImageToCanvas(ctx, fallback, cw, ch);
         }
@@ -134,7 +291,7 @@ export default function HeroScrub() {
     [drawImageToCanvas]
   );
 
-  /* ─── Unified Frame Renderer (single canvas for all devices) ─── */
+  /* ─── Unified frame renderer ─── */
   const drawFrame = useCallback(
     (progress: number) => {
       const canvas = canvasRef.current;
@@ -143,9 +300,9 @@ export default function HeroScrub() {
       if (!ctx) return;
       const { width: cw, height: ch } = canvas;
 
-      const introFrames = introFramesRef.current;
-      const campusFrames = campusFramesRef.current;
-      if (introFrames.length === 0 || campusFrames.length === 0) return;
+      const introMgr = introMgrRef.current;
+      const campusMgr = campusMgrRef.current;
+      if (!introMgr || !campusMgr) return;
 
       ctx.clearRect(0, 0, cw, ch);
       ctx.fillStyle = '#050506';
@@ -154,155 +311,154 @@ export default function HeroScrub() {
       if (progress <= TRANSITION_START) {
         currentPhaseRef.current = 'intro';
         const p = Math.min(progress / INTRO_END, 1);
-        const idx = Math.min(Math.floor(p * introFrames.length), introFrames.length - 1);
-        drawSafeFrame(ctx, introFrames, idx, lastDrawnIntroRef, cw, ch);
+        const idx = Math.min(Math.floor(p * introMgr.length), introMgr.length - 1);
+        drawSafeFrame(ctx, introMgr, idx, lastDrawnIntroRef, cw, ch);
+        introMgr.ensureWindow(idx);
       } else if (progress >= TRANSITION_END) {
         currentPhaseRef.current = 'campus';
         const p = Math.min((progress - CAMPUS_START) / (1 - CAMPUS_START), 1);
-        const idx = Math.min(Math.floor(p * campusFrames.length), campusFrames.length - 1);
-        drawSafeFrame(ctx, campusFrames, idx, lastDrawnCampusRef, cw, ch);
+        const idx = Math.min(Math.floor(p * campusMgr.length), campusMgr.length - 1);
+        drawSafeFrame(ctx, campusMgr, idx, lastDrawnCampusRef, cw, ch);
+        campusMgr.ensureWindow(idx);
+
+        // Task 6: Release intro frames once permanently in campus phase
+        if (!introReleasedRef.current) {
+          introReleasedRef.current = true;
+          debugLog('Releasing intro frames — permanently in campus phase');
+          // Delay release slightly to avoid flash during fast reverse
+          setTimeout(() => {
+            if (currentPhaseRef.current === 'campus') {
+              introMgrRef.current?.destroy();
+            } else {
+              introReleasedRef.current = false; // User scrolled back
+            }
+          }, 2000);
+        }
       } else {
         currentPhaseRef.current = 'transition';
+        introReleasedRef.current = false; // Reset if we're back in transition
+
         const ip = Math.min(progress / INTRO_END, 1);
         const cp = Math.max(0, (progress - CAMPUS_START) / (1 - CAMPUS_START));
         const fadeRaw = (progress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
-        const fade = fadeRaw * fadeRaw * (3 - 2 * fadeRaw);
+        const fade = fadeRaw * fadeRaw * (3 - 2 * fadeRaw); // smoothstep
 
-        const iIdx = Math.min(Math.floor(ip * introFrames.length), introFrames.length - 1);
-        const cIdx = Math.max(0, Math.min(Math.floor(cp * campusFrames.length), campusFrames.length - 1));
+        const iIdx = Math.min(Math.floor(ip * introMgr.length), introMgr.length - 1);
+        const cIdx = Math.max(0, Math.min(Math.floor(cp * campusMgr.length), campusMgr.length - 1));
 
-        drawSafeFrame(ctx, introFrames, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
-        drawSafeFrame(ctx, campusFrames, cIdx, lastDrawnCampusRef, cw, ch, fade);
+        drawSafeFrame(ctx, introMgr, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
+        drawSafeFrame(ctx, campusMgr, cIdx, lastDrawnCampusRef, cw, ch, fade);
         ctx.globalAlpha = 1;
+
+        introMgr.ensureWindow(iIdx);
+        campusMgr.ensureWindow(cIdx);
       }
     },
     [drawSafeFrame]
   );
 
-  /* ─── Preloader: HTMLImageElement + .decode() for guaranteed bitmap caching ─── */
+  /* ─── Task 7: Visibility handling ─── */
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'hidden') {
+        introMgrRef.current?.pause();
+        campusMgrRef.current?.pause();
+        debugLog('Tab hidden — paused decoders');
+      } else {
+        introMgrRef.current?.resume();
+        campusMgrRef.current?.resume();
+        drawFrame(lastProgressRef.current);
+        debugLog('Tab visible — resumed decoders, resynced canvas');
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [drawFrame]);
+
+  /* ─── Preloader with rolling-window architecture (Tasks 2, 3, 5) ─── */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
     const isMobile = window.innerWidth < 768;
-    const lowEnd = isLowEndDevice();
-    isMobileRef.current = isMobile;
+    const tier = getDeviceTier();
+    const config = getTierConfig(tier);
+    tierRef.current = tier;
+    configRef.current = config;
 
-    // Enable normalizeScroll on mobile to eliminate iOS momentum scroll jank.
-    // This intercepts touch events and converts them to smooth, predictable
-    // scroll updates — bypassing iOS Safari's aggressive rAF throttling
-    // during momentum scrolling that causes the "stuck frame then jump" bug.
-    if (isMobile) {
-      ScrollTrigger.normalizeScroll(true);
+    debugLog(`Device tier: ${tier}`, config);
+
+    // Build frame source lists with equalized density
+    const introStep = Math.max(1, Math.floor(INTRO_TOTAL / config.introFrameCount));
+    const campusStep = Math.max(1, Math.floor(CAMPUS_TOTAL / config.campusFrameCount));
+
+    const introSrcs: string[] = [];
+    for (let i = 0; i < config.introFrameCount; i++) {
+      const frameNum = tier === 'HIGH' ? (i + 1) : (i * introStep + 1);
+      introSrcs.push(getIntroFrameSrc(Math.min(frameNum, INTRO_TOTAL), isMobile));
     }
 
-    const introCount = (isMobile || lowEnd) ? MOBILE_INTRO_COUNT : INTRO_TOTAL;
-    const campusCount = (isMobile || lowEnd) ? MOBILE_CAMPUS_COUNT : CAMPUS_TOTAL;
-    const introStep = (isMobile || lowEnd) ? Math.max(1, Math.floor(INTRO_TOTAL / introCount)) : 1;
-    const campusStep = (isMobile || lowEnd) ? Math.max(1, Math.floor(CAMPUS_TOTAL / campusCount)) : 1;
+    const campusSrcs: string[] = [];
+    for (let i = 0; i < config.campusFrameCount; i++) {
+      const frameNum = tier === 'HIGH' ? (i + 1) : (i * campusStep + 1);
+      campusSrcs.push(getCampusFrameSrc(Math.min(frameNum, CAMPUS_TOTAL), isMobile));
+    }
 
-    const totalFrames = introCount + campusCount;
-    let loadedCount = 0;
+    const totalFrames = introSrcs.length + campusSrcs.length;
+    let combinedLoaded = 0;
 
-    const loadedIntro: (HTMLImageElement | HTMLCanvasElement)[] = new Array(introCount).fill(null);
-    const loadedCampus: (HTMLImageElement | HTMLCanvasElement)[] = new Array(campusCount).fill(null);
-
-    const onProgress = () => {
-      loadedCount++;
-      setLoadProgress(Math.min(100, Math.round((loadedCount / totalFrames) * 100)));
-
-      if (loadedCount >= totalFrames) {
-        introFramesRef.current = loadedIntro;
-        campusFramesRef.current = loadedCampus;
-
-        setTimeout(() => {
-          setIsLoaded(true);
-          drawFrame(0);
-        }, 150);
-      }
+    const updateProgress = () => {
+      combinedLoaded++;
+      setLoadProgress(Math.min(100, Math.round((combinedLoaded / totalFrames) * 100)));
     };
 
-    // Load image + force GPU decode using .decode()
-    // .decode() guarantees the browser has fully decompressed the image
-    // into its internal decoded bitmap cache BEFORE we ever try to draw it.
-    // HOWEVER, iOS WebKit aggressively evicts decoded bitmaps if memory gets tight.
-    // To prevent this, on mobile we draw the image to an offscreen canvas IMMEDIATELY.
-    // WebKit cannot garbage-collect living canvas buffers. This guarantees zero frame stall.
-    const loadAndDecode = async (src: string, target: (HTMLImageElement | HTMLCanvasElement)[], index: number) => {
-      const img = new window.Image();
-      img.src = src;
+    const introMgr = new FrameManager(introSrcs, config, isMobile, {
+      onProgressUpdate: updateProgress,
+    });
 
-      try {
-        await img.decode();
-        
-        if (isMobile) {
-          const offscreen = document.createElement('canvas');
-          offscreen.width = img.naturalWidth;
-          offscreen.height = img.naturalHeight;
-          const oCtx = offscreen.getContext('2d');
-          if (oCtx) {
-            oCtx.drawImage(img, 0, 0);
-            target[index] = offscreen;
-          } else {
-            target[index] = img;
-          }
-        } else {
-          target[index] = img;
-        }
-      } catch {
-        // Fallback
-        await new Promise<void>((resolve) => {
-          img.onload = () => {
-            if (isMobile) {
-              const offscreen = document.createElement('canvas');
-              offscreen.width = img.naturalWidth || img.width;
-              offscreen.height = img.naturalHeight || img.height;
-              const oCtx = offscreen.getContext('2d');
-              if (oCtx) {
-                oCtx.drawImage(img, 0, 0);
-                target[index] = offscreen;
-              } else {
-                target[index] = img;
-              }
-            } else {
-              target[index] = img;
-            }
-            resolve();
-          };
-          img.onerror = () => resolve();
-        });
-      }
-      onProgress();
+    const campusMgr = new FrameManager(campusSrcs, config, isMobile, {
+      onProgressUpdate: updateProgress,
+    });
+
+    introMgrRef.current = introMgr;
+    campusMgrRef.current = campusMgr;
+
+    // Two-phase loading:
+    // Phase 1 (gate): Load first window of BOTH sequences → unlock scrubbing
+    // Phase 2 (stream): Background-load remaining frames
+    const loadPipeline = async () => {
+      // Gate: load minimum frames of both sequences in parallel
+      await Promise.all([
+        introMgr.preloadGate(),
+        campusMgr.preloadGate(),
+      ]);
+
+      debugLog('Gate frames ready — unlocking scrub');
+      setIsLoaded(true);
+
+      // Small delay to let React paint the unlocked state before we resume heavy work
+      await new Promise<void>(r => setTimeout(r, 200));
+
+      // Stream: load remaining frames in background
+      await Promise.all([
+        introMgr.preloadRemaining(config.gateFrameCount),
+        campusMgr.preloadRemaining(config.gateFrameCount),
+      ]);
+
+      debugLog('All frames loaded');
     };
 
-    const loadAll = async () => {
-      const queue: (() => Promise<void>)[] = [];
+    loadPipeline();
 
-      for (let i = 0; i < introCount; i++) {
-        const frameNum = (isMobile || lowEnd) ? (i * introStep + 1) : (i + 1);
-        queue.push(() => loadAndDecode(getIntroFrameSrc(frameNum, isMobile), loadedIntro, i));
-      }
-      for (let i = 0; i < campusCount; i++) {
-        const frameNum = (isMobile || lowEnd) ? (i * campusStep + 1) : (i + 1);
-        queue.push(() => loadAndDecode(getCampusFrameSrc(frameNum, isMobile), loadedCampus, i));
-      }
-
-      // Smaller batches on mobile to prevent memory spikes
-      const BATCH_SIZE = isMobile ? 6 : 12;
-      for (let i = 0; i < queue.length; i += BATCH_SIZE) {
-        await Promise.all(queue.slice(i, i + BATCH_SIZE).map(t => t()));
-      }
-    };
-
-    loadAll();
-
+    // Cleanup: release all frames on unmount (Task 6)
     return () => {
-      if (isMobile) {
-        ScrollTrigger.normalizeScroll(false);
-      }
+      introMgr.destroy();
+      campusMgr.destroy();
+      introMgrRef.current = null;
+      campusMgrRef.current = null;
     };
-  }, [prefersReducedMotion, drawFrame]);
+  }, [prefersReducedMotion]);
 
-  /* ─── ScrollTrigger Setup ─── */
+  /* ─── ScrollTrigger setup (Task 4: dvh fix) ─── */
   useEffect(() => {
     if (prefersReducedMotion || !isLoaded) return;
 
@@ -311,10 +467,11 @@ export default function HeroScrub() {
     const canvas = canvasRef.current;
     if (!container || !sticky || !canvas) return;
 
-    const isMobile = isMobileRef.current;
+    const config = configRef.current;
 
+    // Initial canvas sizing
     const resizeCanvas = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, config.canvasDprCap);
       const w = window.innerWidth;
       const h = window.innerHeight;
       canvas.width = w * dpr;
@@ -325,7 +482,36 @@ export default function HeroScrub() {
     };
 
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas, { passive: true });
+
+    // Task 4: Debounced resize that ignores pure address-bar height deltas
+    let lastVVH = window.visualViewport?.height ?? window.innerHeight;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const newVVH = window.visualViewport?.height ?? window.innerHeight;
+        const delta = Math.abs(newVVH - lastVVH);
+        // Ignore changes < 100px (likely just address bar)
+        if (delta > 100 || Math.abs(window.innerWidth - canvas.clientWidth) > 1) {
+          lastVVH = newVVH;
+          resizeCanvas();
+          ScrollTrigger.refresh();
+          debugLog('Resize: refreshed ScrollTrigger');
+        }
+      }, 150);
+    };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => {
+        resizeCanvas();
+        ScrollTrigger.refresh();
+      }, 300);
+    });
+
+    // Draw initial frame
+    drawFrame(0);
 
     const timeline = content.heroOverlayTimeline;
 
@@ -374,11 +560,12 @@ export default function HeroScrub() {
 
     return () => {
       trigger.kill();
-      window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimer) clearTimeout(resizeTimer);
     };
   }, [prefersReducedMotion, isLoaded, drawFrame]);
 
-  // ─── Reduced Motion Fallback ───
+  /* ─── Reduced Motion Fallback ─── */
   if (prefersReducedMotion) {
     return (
       <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden flex items-center justify-center">
@@ -390,7 +577,8 @@ export default function HeroScrub() {
   }
 
   return (
-    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]">
+    /* Task 4: h-[300dvh] instead of h-[300vh] */
+    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300dvh] md:h-[700dvh]">
       <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden relative">
         {/* Ambient gold glow */}
         <div className="ambient-blob ambient-blob-gold w-[320px] h-[320px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-25" />

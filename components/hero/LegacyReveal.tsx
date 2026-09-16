@@ -24,27 +24,111 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
     setPrefersReducedMotion(mq.matches);
   }, []);
 
-  // Play video when scrolled into view
+  /* ─── Task 10: Prefetch video data when approaching viewport ─── */
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const observer = new IntersectionObserver(
+    // Start buffering video data when section is within 600px of viewport
+    const prefetchObserver = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          video.play().catch(() => {
+          video.preload = 'auto'; // Upgrade from "metadata" to full buffering
+          prefetchObserver.disconnect();
+        }
+      },
+      { rootMargin: '600px' }
+    );
+
+    prefetchObserver.observe(video);
+    return () => prefetchObserver.disconnect();
+  }, []);
+
+  /* ─── Task 9: Fixed play/pause with AbortError handling ─── */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Track in-flight play promise to prevent the classic play()/pause() race
+    let playPromise: Promise<void> | null = null;
+    let currentlyIntersecting = false;
+
+    // Reset playFailed when video successfully plays
+    const onPlaying = () => {
+      if (playFailed) setPlayFailed(false);
+    };
+    video.addEventListener('playing', onPlaying);
+
+    const attemptPlay = () => {
+      // Task 10: Only play if enough data is buffered
+      if (video.readyState < 3 /* HAVE_FUTURE_DATA */) {
+        // Not enough data yet — wait for canplay event
+        const onCanPlay = () => {
+          video.removeEventListener('canplay', onCanPlay);
+          if (currentlyIntersecting) attemptPlay();
+        };
+        video.addEventListener('canplay', onCanPlay);
+        return;
+      }
+
+      playPromise = video.play();
+      playPromise
+        .catch((err: DOMException) => {
+          if (err.name === 'AbortError') {
+            // Interrupted by a rapid pause() — NOT a real failure.
+            // Retry silently if still in viewport.
+            if (currentlyIntersecting) {
+              setTimeout(() => {
+                if (currentlyIntersecting) attemptPlay();
+              }, 100);
+            }
+          } else if (err.name === 'NotAllowedError') {
+            // Genuine autoplay policy block (e.g. iOS Low Power Mode)
+            // This is the ONLY case where the tap-to-play fallback is appropriate
             setPlayFailed(true);
+          }
+          // Other errors: silently ignore (network hiccups, etc.)
+        })
+        .finally(() => {
+          playPromise = null;
+        });
+    };
+
+    const safePause = () => {
+      if (playPromise) {
+        // Wait for pending play() to settle, THEN pause
+        playPromise
+          .then(() => {
+            if (!currentlyIntersecting) video.pause();
+          })
+          .catch(() => {
+            // play() was already rejected — no need to pause
           });
+      } else {
+        video.pause();
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        currentlyIntersecting = entry.isIntersecting;
+
+        if (entry.isIntersecting) {
+          attemptPlay();
         } else {
-          video.pause();
+          safePause();
         }
       },
       { threshold: 0.3 }
     );
 
     observer.observe(video);
-    return () => observer.disconnect();
-  }, []);
+
+    return () => {
+      observer.disconnect();
+      video.removeEventListener('playing', onPlaying);
+    };
+  }, [playFailed]);
 
   // Track video progress for emblem reveal
   useEffect(() => {
@@ -101,13 +185,13 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
           }}
         />
 
-        {/* Play fallback for iOS Low Power Mode */}
+        {/* Play fallback — only shown for genuine NotAllowedError */}
         {playFailed && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 pointer-events-none">
             <button
               onClick={() => {
                 if (videoRef.current) {
-                  videoRef.current.play().then(() => setPlayFailed(false));
+                  videoRef.current.play().then(() => setPlayFailed(false)).catch(() => {});
                 }
               }}
               className="pointer-events-auto px-6 py-3 rounded-full bg-[#D4AF7A]/20 text-[#D4AF7A] border border-[#D4AF7A]/50 backdrop-blur-md uppercase tracking-widest text-xs font-mono transition-all hover:bg-[#D4AF7A]/40"

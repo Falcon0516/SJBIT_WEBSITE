@@ -1,13 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { content } from '@/lib/content';
 import { Menu, X } from 'lucide-react';
 import { ArrowRight } from '@/lib/event-icons';
-
-gsap.registerPlugin(ScrollTrigger);
 
 interface NavbarProps {
   onRegisterClick?: () => void;
@@ -21,26 +17,33 @@ export default function Navbar({ onRegisterClick }: NavbarProps) {
   const { site } = content;
 
   useEffect(() => {
-    // Show navbar after hero first beat (5% scroll)
-    const showTrigger = ScrollTrigger.create({
-      trigger: document.body,
-      start: 'top -5%',
-      onEnter: () => setIsVisible(true),
-      onLeaveBack: () => setIsVisible(false),
-    });
+    // Use absolute pixel thresholds instead of ScrollTrigger percent-of-body.
+    // The old approach fired setState during the pinned hero scrub, causing
+    // unnecessary main-thread contention on the exact frames that matter most.
+    let wasVisible = false;
+    let wasScrolled = false;
 
-    // Solidify navbar after hero section
-    const solidifyTrigger = ScrollTrigger.create({
-      trigger: document.body,
-      start: 'top -30%',
-      onEnter: () => setIsScrolled(true),
-      onLeaveBack: () => setIsScrolled(false),
-    });
+    const handleScroll = () => {
+      const y = window.scrollY;
+      // Show navbar after ~100px of scroll
+      const nowVisible = y > 100;
+      // Solidify after ~500px
+      const nowScrolled = y > 500;
 
-    return () => {
-      showTrigger.kill();
-      solidifyTrigger.kill();
+      if (nowVisible !== wasVisible) {
+        wasVisible = nowVisible;
+        setIsVisible(nowVisible);
+      }
+      if (nowScrolled !== wasScrolled) {
+        wasScrolled = nowScrolled;
+        setIsScrolled(nowScrolled);
+      }
     };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // sync initial state
+
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // Lock body scroll when mobile menu is open
