@@ -38,6 +38,7 @@ type FrameData = HTMLCanvasElement | HTMLImageElement | null;
 /* ─── Rolling Window Frame Manager ─── */
 class FrameManager {
   private frames: FrameData[];
+  private canvasPool: HTMLCanvasElement[] = [];
   private srcs: string[];
   private loading = new Set<number>();
   private config: TierConfig;
@@ -67,6 +68,13 @@ class FrameManager {
     this.onFirstWindowReady = callbacks.onFirstWindowReady || null;
     this.onProgressUpdate = callbacks.onProgressUpdate || null;
     this.onFrameLoaded = callbacks.onFrameLoaded || null;
+
+    // Pre-allocate the canvas pool for mobile to completely prevent GC leaks and Safari crashes
+    if (this.config.useOffscreenCache && this.isMobile) {
+      for (let i = 0; i < this.config.windowSize + 10; i++) {
+        this.canvasPool.push(document.createElement('canvas'));
+      }
+    }
   }
 
   get length() { return this.srcs.length; }
@@ -111,8 +119,18 @@ class FrameManager {
     if (this.config.windowSize < this.srcs.length) {
       for (let i = 0; i < this.srcs.length; i++) {
         if (i < lo || i > hi) {
-          if (this.frames[i] !== null) {
-            this.frames[i] = null; // Let GC reclaim
+          // If currently loading, abort it
+          if (this.loading.has(i)) {
+            this.loading.delete(i);
+          }
+          
+          const frame = this.frames[i];
+          if (frame !== null) {
+            // Recycle canvas back to pool to prevent memory leaks!
+            if (frame instanceof HTMLCanvasElement) {
+              this.canvasPool.push(frame);
+            }
+            this.frames[i] = null;
           }
         }
       }
@@ -168,17 +186,25 @@ class FrameManager {
       // Decode on background thread first
       try { await img.decode(); } catch {}
 
+      // EVICTION CHECK: If the user scrolled away while we were decoding, discard!
+      if (!this.loading.has(index)) return;
+
       if (this.config.useOffscreenCache && this.isMobile) {
-        // Bake into offscreen canvas to prevent iOS WebKit eviction.
-        // Since img.decode() already completed, drawImage is instant and won't block the main thread.
-        const offscreen = document.createElement('canvas');
-        offscreen.width = img.naturalWidth;
-        offscreen.height = img.naturalHeight;
-        const oCtx = offscreen.getContext('2d');
-        if (oCtx) {
-          oCtx.drawImage(img, 0, 0);
-          this.frames[index] = offscreen;
+        // Pop a pre-allocated canvas from the pool
+        const offscreen = this.canvasPool.pop();
+        if (offscreen) {
+          offscreen.width = img.naturalWidth || 640;
+          offscreen.height = img.naturalHeight || 360;
+          const oCtx = offscreen.getContext('2d', { alpha: false }); // Optimization for opaque frames
+          if (oCtx) {
+            oCtx.drawImage(img, 0, 0);
+            this.frames[index] = offscreen;
+          } else {
+            this.frames[index] = img;
+            this.canvasPool.push(offscreen); // Return broken canvas
+          }
         } else {
+          // Pool exhausted (shouldn't happen with proper eviction), fallback
           this.frames[index] = img;
         }
       } else {
@@ -543,7 +569,7 @@ export default function HeroScrub() {
   /* ─── Reduced Motion Fallback ─── */
   if (prefersReducedMotion) {
     return (
-      <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden flex items-center justify-center">
+      <section className="relative w-full h-[100vh] bg-[#050506] overflow-hidden flex items-center justify-center">
         <Image src="/images/hero-poster.jpg" alt="SJBIT Campus" fill className="object-contain md:object-cover" priority />
         <div className="absolute inset-0 bg-black/50" />
         <HeroOverlay activeFrameIndex={content.heroOverlayTimeline.length - 1} prefersReducedMotion={true} />
@@ -552,9 +578,8 @@ export default function HeroScrub() {
   }
 
   return (
-    /* Task 4: h-[300dvh] instead of h-[300vh] */
-    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300dvh] md:h-[700dvh]">
-      <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden relative">
+    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]">
+      <div ref={stickyRef} className="w-full h-[100vh] overflow-hidden relative">
         {/* Ambient gold glow */}
         <div className="ambient-blob ambient-blob-gold w-[320px] h-[320px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-25" />
 
