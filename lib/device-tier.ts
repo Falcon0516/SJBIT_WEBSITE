@@ -11,10 +11,8 @@
 export type DeviceTier = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface TierConfig {
-  /** Number of intro frames to decode/hold */
-  introFrameCount: number;
-  /** Number of campus frames to decode/hold */
-  campusFrameCount: number;
+  /** Number of unified frames to decode/hold */
+  unifiedFrameCount: number;
   /** Max concurrent decode operations */
   batchConcurrency: number;
   /** Canvas devicePixelRatio cap */
@@ -108,13 +106,8 @@ export function getTierConfig(tier?: DeviceTier): TierConfig {
   switch (t) {
     case 'HIGH':
       if (isMobile) {
-        // High-end mobile (S24 Ultra, iQOO 12): generous but bounded.
-        // These devices CAN hold everything, but there's no need to decode
-        // 150+180 frames when using 640×360 assets — a generous window
-        // with high concurrency gives identical visual quality.
         return {
-          introFrameCount: 40,
-          campusFrameCount: 48,
+          unifiedFrameCount: 88, // 40 + 48
           batchConcurrency: 10,
           canvasDprCap: 2,
           useOffscreenCache: false,
@@ -122,35 +115,31 @@ export function getTierConfig(tier?: DeviceTier): TierConfig {
           gateFrameCount: 30,
         };
       }
-      // Desktop HIGH: hold entire sequence, no eviction
       return {
-        introFrameCount: 150,
-        campusFrameCount: 180,
+        unifiedFrameCount: 330, // 150 + 180
         batchConcurrency: 12,
         canvasDprCap: 2,
         useOffscreenCache: false,
-        windowSize: 180, // Larger than any single sequence → no eviction
+        windowSize: 180, // Large window
         gateFrameCount: 30,
       };
     case 'MEDIUM':
       return {
-        introFrameCount: 30,
-        campusFrameCount: 36,
+        unifiedFrameCount: 66, // 30 + 36
         batchConcurrency: 6,
         canvasDprCap: 1,
         useOffscreenCache: true,
         windowSize: 20,
-        gateFrameCount: 20, // Pre-load 2/3 of intro before unlocking
+        gateFrameCount: 20,
       };
     case 'LOW':
       return {
-        introFrameCount: 20,
-        campusFrameCount: 24,
+        unifiedFrameCount: 44, // 20 + 24
         batchConcurrency: 3,
         canvasDprCap: 1,
         useOffscreenCache: true,
         windowSize: 12,
-        gateFrameCount: 14, // Pre-load 70% of intro before unlocking
+        gateFrameCount: 14,
       };
   }
 }
