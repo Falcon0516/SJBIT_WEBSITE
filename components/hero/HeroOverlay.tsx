@@ -117,11 +117,8 @@ function OverlayText({
       className="max-w-5xl"
     >
       <h1
-        className="font-serif text-2xl sm:text-5xl md:text-7xl lg:text-8xl mb-3 sm:mb-6 tracking-tight text-balance"
-        style={{
-          color: '#F5F3EE',
-          textShadow: '0 4px 40px rgba(0,0,0,0.6), 0 0 120px rgba(212,175,122,0.15)',
-        }}
+        className="font-serif text-2xl sm:text-5xl md:text-7xl lg:text-8xl mb-3 sm:mb-6 tracking-tight text-balance hero-heading-shadow"
+        style={{ color: '#F5F3EE' }}
       >
         {frame.heading}
       </h1>

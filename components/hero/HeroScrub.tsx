@@ -616,7 +616,7 @@ export default function HeroScrub() {
         {/* Golden glow overlay */}
         <div
           ref={glowRef}
-          className="absolute inset-0 pointer-events-none z-[5]"
+          className="absolute inset-0 pointer-events-none z-[5] hidden md:block"
           style={{ opacity: 0, transition: 'opacity 0.5s ease-out' }}
         >
           <div

@@ -298,3 +298,13 @@ summary,
   0% { background-position: 0 0; }
   100% { background-position: 30px 30px; }
 }
+
+.hero-heading-shadow {
+  text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+}
+
+@media (min-width: 768px) {
+  .hero-heading-shadow {
+    text-shadow: 0 4px 40px rgba(0,0,0,0.6), 0 0 120px rgba(212,175,122,0.15);
+  }
+}
