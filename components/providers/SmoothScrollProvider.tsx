@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, ReactNode } from 'react';
+import { useLayoutEffect, useRef, ReactNode } from 'react';
 import Lenis from 'lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -14,7 +14,11 @@ interface SmoothScrollProviderProps {
 export default function SmoothScrollProvider({ children }: SmoothScrollProviderProps) {
   const lenisRef = useRef<Lenis | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect runs synchronously after DOM mutations but BEFORE paint,
+  // and critically: parent useLayoutEffect runs BEFORE child useEffect.
+  // This guarantees normalizeScroll(true) is invoked before any child
+  // component's useEffect that might call ScrollTrigger.create().
+  useLayoutEffect(() => {
     // Respect reduced motion
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReducedMotion) return;

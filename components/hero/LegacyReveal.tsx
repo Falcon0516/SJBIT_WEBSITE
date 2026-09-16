@@ -5,7 +5,6 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { content } from '@/lib/content';
 import { ArrowRight } from '@/lib/event-icons';
-import ParticleField from '@/components/ui/ParticleField';
 
 gsap.registerPlugin(ScrollTrigger);
 

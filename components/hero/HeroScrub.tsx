@@ -59,7 +59,9 @@ class FrameManager {
   private paused = false;
   private onFirstWindowReady: (() => void) | null = null;
   private onProgressUpdate: ((loaded: number, total: number) => void) | null = null;
+  private onFrameLoaded: ((index: number) => void) | null = null;
   private totalLoaded = 0;
+  private lastEnsuredIndex = -1;
 
   constructor(
     srcs: string[],
@@ -68,6 +70,7 @@ class FrameManager {
     callbacks: {
       onFirstWindowReady?: () => void;
       onProgressUpdate?: (loaded: number, total: number) => void;
+      onFrameLoaded?: (index: number) => void;
     } = {}
   ) {
     this.frames = new Array(srcs.length).fill(null);
@@ -76,6 +79,7 @@ class FrameManager {
     this.isMobile = isMobile;
     this.onFirstWindowReady = callbacks.onFirstWindowReady || null;
     this.onProgressUpdate = callbacks.onProgressUpdate || null;
+    this.onFrameLoaded = callbacks.onFrameLoaded || null;
   }
 
   get length() { return this.srcs.length; }
@@ -122,6 +126,10 @@ class FrameManager {
 
   /** Ensure frames around the given index are loaded, evict distant ones on MEDIUM/LOW */
   ensureWindow(currentIndex: number): void {
+    // Throttle: skip if the requested index hasn't changed
+    if (currentIndex === this.lastEnsuredIndex) return;
+    this.lastEnsuredIndex = currentIndex;
+
     if (this.config.windowSize >= this.srcs.length) return; // HIGH tier: keep everything
 
     const half = Math.floor(this.config.windowSize / 2);
@@ -140,7 +148,7 @@ class FrameManager {
     // Request any missing frames within the window (don't block on them)
     for (let i = lo; i <= hi; i++) {
       if (this.frames[i] === null && !this.loading.has(i)) {
-        this.loadFrame(i); // Fire-and-forget
+        this.loadFrame(i); // Fire-and-forget — will trigger onFrameLoaded → repaint
       }
     }
   }
@@ -182,6 +190,7 @@ class FrameManager {
 
       this.totalLoaded++;
       this.onProgressUpdate?.(this.totalLoaded, this.srcs.length);
+      this.onFrameLoaded?.(index);
 
       if (DEBUG) {
         debugLog(`Frame ${index} loaded in ${(performance.now() - t0).toFixed(1)}ms`);
@@ -411,12 +420,22 @@ export default function HeroScrub() {
       setLoadProgress(Math.min(100, Math.round((combinedLoaded / totalFrames) * 100)));
     };
 
+    // THE FIX for the missing-invalidation bug:
+    // When a frame finishes loading in the background, repaint the canvas
+    // at the current scroll position. Without this, the canvas stays frozen
+    // showing the last fallback frame until the user scrolls again.
+    const repaintOnReady = () => {
+      drawFrame(lastProgressRef.current);
+    };
+
     const introMgr = new FrameManager(introSrcs, config, isMobile, {
       onProgressUpdate: updateProgress,
+      onFrameLoaded: repaintOnReady,
     });
 
     const campusMgr = new FrameManager(campusSrcs, config, isMobile, {
       onProgressUpdate: updateProgress,
+      onFrameLoaded: repaintOnReady,
     });
 
     introMgrRef.current = introMgr;

@@ -58,7 +58,9 @@ export function getDeviceTier(): DeviceTier {
 
   const cores = navigator.hardwareConcurrency || 0;
   const memory: number =
-    'deviceMemory' in navigator ? (navigator as any).deviceMemory : -1;
+    'deviceMemory' in navigator
+      ? (navigator as { deviceMemory?: number }).deviceMemory ?? -1
+      : -1;
   const isMobile = isMobileViewport();
   const isIOS = isIOSDevice();
   const dpr = window.devicePixelRatio || 1;
@@ -101,17 +103,34 @@ export function getDeviceTier(): DeviceTier {
  */
 export function getTierConfig(tier?: DeviceTier): TierConfig {
   const t = tier ?? getDeviceTier();
+  const isMobile = isMobileViewport();
 
   switch (t) {
     case 'HIGH':
+      if (isMobile) {
+        // High-end mobile (S24 Ultra, iQOO 12): generous but bounded.
+        // These devices CAN hold everything, but there's no need to decode
+        // 150+180 frames when using 640×360 assets — a generous window
+        // with high concurrency gives identical visual quality.
+        return {
+          introFrameCount: 40,
+          campusFrameCount: 48,
+          batchConcurrency: 10,
+          canvasDprCap: 2,
+          useOffscreenCache: false,
+          windowSize: 40,
+          gateFrameCount: 30,
+        };
+      }
+      // Desktop HIGH: hold entire sequence, no eviction
       return {
         introFrameCount: 150,
         campusFrameCount: 180,
         batchConcurrency: 12,
         canvasDprCap: 2,
         useOffscreenCache: false,
-        windowSize: 150, // HIGH tier holds everything
-        gateFrameCount: 30, // Need 30 frames before unlocking
+        windowSize: 180, // Larger than any single sequence → no eviction
+        gateFrameCount: 30,
       };
     case 'MEDIUM':
       return {
@@ -120,8 +139,8 @@ export function getTierConfig(tier?: DeviceTier): TierConfig {
         batchConcurrency: 6,
         canvasDprCap: 1,
         useOffscreenCache: true,
-        windowSize: 20, // Rolling window of 20 frames
-        gateFrameCount: 10, // Need 10 frames before unlocking
+        windowSize: 20,
+        gateFrameCount: 20, // Pre-load 2/3 of intro before unlocking
       };
     case 'LOW':
       return {
@@ -130,8 +149,8 @@ export function getTierConfig(tier?: DeviceTier): TierConfig {
         batchConcurrency: 3,
         canvasDprCap: 1,
         useOffscreenCache: true,
-        windowSize: 12, // Tight window
-        gateFrameCount: 8,
+        windowSize: 12,
+        gateFrameCount: 14, // Pre-load 70% of intro before unlocking
       };
   }
 }
