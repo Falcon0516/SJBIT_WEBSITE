@@ -225,8 +225,7 @@ export default function HeroScrub() {
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
-  const introMgrRef = useRef<FrameManager | null>(null);
-  const campusMgrRef = useRef<FrameManager | null>(null);
+  const unifiedMgrRef = useRef<FrameManager | null>(null);
   const currentPhaseRef = useRef<'intro' | 'transition' | 'campus'>('intro');
   const activeTimelineIndexRef = useRef(-1);
   const lastProgressRef = useRef(0);
@@ -234,7 +233,6 @@ export default function HeroScrub() {
   const lastDrawnCampusRef = useRef(0);
   const tierRef = useRef<DeviceTier>('MEDIUM');
   const configRef = useRef<TierConfig>(getTierConfig('MEDIUM'));
-  const introReleasedRef = useRef(false);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -309,9 +307,12 @@ export default function HeroScrub() {
       if (!ctx) return;
       const { width: cw, height: ch } = canvas;
 
-      const introMgr = introMgrRef.current;
-      const campusMgr = campusMgrRef.current;
-      if (!introMgr || !campusMgr) return;
+      const unifiedMgr = unifiedMgrRef.current;
+      const config = configRef.current;
+      if (!unifiedMgr || !config) return;
+
+      const introCount = config.introFrameCount;
+      const campusCount = config.campusFrameCount;
 
       ctx.clearRect(0, 0, cw, ch);
       ctx.fillStyle = '#050506';
@@ -320,47 +321,32 @@ export default function HeroScrub() {
       if (progress <= TRANSITION_START) {
         currentPhaseRef.current = 'intro';
         const p = Math.min(progress / INTRO_END, 1);
-        const idx = Math.min(Math.floor(p * introMgr.length), introMgr.length - 1);
-        drawSafeFrame(ctx, introMgr, idx, lastDrawnIntroRef, cw, ch);
-        introMgr.ensureWindow(idx);
+        const idx = Math.min(Math.floor(p * introCount), introCount - 1);
+        drawSafeFrame(ctx, unifiedMgr, idx, lastDrawnIntroRef, cw, ch);
+        unifiedMgr.ensureWindow(idx);
       } else if (progress >= TRANSITION_END) {
         currentPhaseRef.current = 'campus';
         const p = Math.min((progress - CAMPUS_START) / (1 - CAMPUS_START), 1);
-        const idx = Math.min(Math.floor(p * campusMgr.length), campusMgr.length - 1);
-        drawSafeFrame(ctx, campusMgr, idx, lastDrawnCampusRef, cw, ch);
-        campusMgr.ensureWindow(idx);
-
-        // Task 6: Release intro frames once permanently in campus phase
-        if (!introReleasedRef.current) {
-          introReleasedRef.current = true;
-          debugLog('Releasing intro frames — permanently in campus phase');
-          // Delay release slightly to avoid flash during fast reverse
-          setTimeout(() => {
-            if (currentPhaseRef.current === 'campus') {
-              introMgrRef.current?.destroy();
-            } else {
-              introReleasedRef.current = false; // User scrolled back
-            }
-          }, 2000);
-        }
+        const idx = introCount + Math.min(Math.floor(p * campusCount), campusCount - 1);
+        drawSafeFrame(ctx, unifiedMgr, idx, lastDrawnCampusRef, cw, ch);
+        unifiedMgr.ensureWindow(idx);
       } else {
         currentPhaseRef.current = 'transition';
-        introReleasedRef.current = false; // Reset if we're back in transition
 
         const ip = Math.min(progress / INTRO_END, 1);
         const cp = Math.max(0, (progress - CAMPUS_START) / (1 - CAMPUS_START));
         const fadeRaw = (progress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
         const fade = fadeRaw * fadeRaw * (3 - 2 * fadeRaw); // smoothstep
 
-        const iIdx = Math.min(Math.floor(ip * introMgr.length), introMgr.length - 1);
-        const cIdx = Math.max(0, Math.min(Math.floor(cp * campusMgr.length), campusMgr.length - 1));
+        const iIdx = Math.min(Math.floor(ip * introCount), introCount - 1);
+        const cIdx = introCount + Math.max(0, Math.min(Math.floor(cp * campusCount), campusCount - 1));
 
-        drawSafeFrame(ctx, introMgr, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
-        drawSafeFrame(ctx, campusMgr, cIdx, lastDrawnCampusRef, cw, ch, fade);
+        drawSafeFrame(ctx, unifiedMgr, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
+        drawSafeFrame(ctx, unifiedMgr, cIdx, lastDrawnCampusRef, cw, ch, fade);
         ctx.globalAlpha = 1;
 
-        introMgr.ensureWindow(iIdx);
-        campusMgr.ensureWindow(cIdx);
+        unifiedMgr.ensureWindow(iIdx);
+        unifiedMgr.ensureWindow(cIdx);
       }
     },
     [drawSafeFrame]
@@ -370,12 +356,10 @@ export default function HeroScrub() {
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState === 'hidden') {
-        introMgrRef.current?.pause();
-        campusMgrRef.current?.pause();
+        unifiedMgrRef.current?.pause();
         debugLog('Tab hidden — paused decoders');
       } else {
-        introMgrRef.current?.resume();
-        campusMgrRef.current?.resume();
+        unifiedMgrRef.current?.resume();
         drawFrame(lastProgressRef.current);
         debugLog('Tab visible — resumed decoders, resynced canvas');
       }
@@ -412,7 +396,8 @@ export default function HeroScrub() {
       campusSrcs.push(getCampusFrameSrc(Math.min(frameNum, CAMPUS_TOTAL), isMobile));
     }
 
-    const totalFrames = introSrcs.length + campusSrcs.length;
+    const allSrcs = [...introSrcs, ...campusSrcs];
+    const totalFrames = allSrcs.length;
     let combinedLoaded = 0;
 
     const updateProgress = () => {
@@ -420,36 +405,23 @@ export default function HeroScrub() {
       setLoadProgress(Math.min(100, Math.round((combinedLoaded / totalFrames) * 100)));
     };
 
-    // THE FIX for the missing-invalidation bug:
-    // When a frame finishes loading in the background, repaint the canvas
-    // at the current scroll position. Without this, the canvas stays frozen
-    // showing the last fallback frame until the user scrolls again.
     const repaintOnReady = () => {
       drawFrame(lastProgressRef.current);
     };
 
-    const introMgr = new FrameManager(introSrcs, config, isMobile, {
+    const unifiedMgr = new FrameManager(allSrcs, config, isMobile, {
       onProgressUpdate: updateProgress,
       onFrameLoaded: repaintOnReady,
     });
 
-    const campusMgr = new FrameManager(campusSrcs, config, isMobile, {
-      onProgressUpdate: updateProgress,
-      onFrameLoaded: repaintOnReady,
-    });
+    unifiedMgrRef.current = unifiedMgr;
 
-    introMgrRef.current = introMgr;
-    campusMgrRef.current = campusMgr;
-
-    // Two-phase loading:
-    // Phase 1 (gate): Load first window of BOTH sequences → unlock scrubbing
-    // Phase 2 (stream): Background-load remaining frames
+    // Loading Pipeline:
+    // Phase 1 (gate): Load first window of unified timeline (intro frames) → unlock scrubbing
+    // Phase 2 (stream): Background-load remaining frames sequentially
     const loadPipeline = async () => {
-      // Gate: load minimum frames of both sequences in parallel
-      await Promise.all([
-        introMgr.preloadGate(),
-        campusMgr.preloadGate(),
-      ]);
+      // Gate: load minimum frames
+      await unifiedMgr.preloadGate();
 
       debugLog('Gate frames ready — unlocking scrub');
       setIsLoaded(true);
@@ -457,25 +429,20 @@ export default function HeroScrub() {
       // Small delay to let React paint the unlocked state before we resume heavy work
       await new Promise<void>(r => setTimeout(r, 200));
 
-      // Stream: load remaining frames in background
-      await Promise.all([
-        introMgr.preloadRemaining(config.gateFrameCount),
-        campusMgr.preloadRemaining(config.gateFrameCount),
-      ]);
+      // Stream: load remaining frames in background sequentially (no network contention!)
+      await unifiedMgr.preloadRemaining(config.gateFrameCount);
 
       debugLog('All frames loaded');
     };
 
     loadPipeline();
 
-    // Cleanup: release all frames on unmount (Task 6)
+    // Cleanup: release all frames on unmount
     return () => {
-      introMgr.destroy();
-      campusMgr.destroy();
-      introMgrRef.current = null;
-      campusMgrRef.current = null;
+      unifiedMgr.destroy();
+      unifiedMgrRef.current = null;
     };
-  }, [prefersReducedMotion]);
+  }, [prefersReducedMotion, drawFrame]);
 
   /* ─── ScrollTrigger setup (Task 4: dvh fix) ─── */
   useEffect(() => {
