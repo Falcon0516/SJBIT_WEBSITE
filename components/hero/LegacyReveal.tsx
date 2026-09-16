@@ -167,7 +167,7 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
       id="legacy"
       className="relative w-full overflow-hidden"
     >
-      <div className="relative w-full aspect-video max-h-[80vh]">
+      <div className="relative w-full aspect-video max-h-[80vh] bg-[#050506]">
         <video
           ref={videoRef}
           src="/videos/hero-source.mp4"
@@ -177,7 +177,7 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
           autoPlay
           controls={playFailed}
           preload="metadata"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain md:object-cover"
           style={{
             opacity: showEmblem ? 0.3 : 1,
             transition: 'opacity 1.5s ease-in-out',

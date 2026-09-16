@@ -17,8 +17,6 @@ export interface TierConfig {
   batchConcurrency: number;
   /** Canvas devicePixelRatio cap */
   canvasDprCap: number;
-  /** Whether to bake decoded images into offscreen canvases (prevents iOS eviction) */
-  useOffscreenCache: boolean;
   /** How many frames ahead/behind current index to keep decoded */
   windowSize: number;
   /** Minimum frames needed before unlocking the loading gate */
@@ -98,48 +96,41 @@ export function getDeviceTier(): DeviceTier {
 
 /**
  * Map a device tier to concrete configuration values.
+ *
+ * ALL tiers now load the full 330 frames. The only difference
+ * is batchConcurrency (loading speed), canvasDprCap (render quality),
+ * and gateFrameCount (how many frames must load before we unlock scrolling).
+ *
+ * 330 mobile webp frames ≈ 5MB network, ≈300MB decoded RAM.
+ * Any 4GB+ device handles this comfortably.
  */
 export function getTierConfig(tier?: DeviceTier): TierConfig {
   const t = tier ?? getDeviceTier();
-  const isMobile = isMobileViewport();
 
   switch (t) {
     case 'HIGH':
-      if (isMobile) {
-        return {
-          unifiedFrameCount: 88, // 40 + 48
-          batchConcurrency: 10,
-          canvasDprCap: 2,
-          useOffscreenCache: false,
-          windowSize: 40,
-          gateFrameCount: 30,
-        };
-      }
       return {
-        unifiedFrameCount: 330, // 150 + 180
+        unifiedFrameCount: 330,
         batchConcurrency: 12,
         canvasDprCap: 2,
-        useOffscreenCache: false,
-        windowSize: 330, // Large window to hold all frames
-        gateFrameCount: 30,
+        windowSize: 330,
+        gateFrameCount: 60,  // Fast devices: unlock early, stream the rest
       };
     case 'MEDIUM':
       return {
-        unifiedFrameCount: 66, // 30 + 36
-        batchConcurrency: 6,
+        unifiedFrameCount: 330,
+        batchConcurrency: 8,
         canvasDprCap: 1,
-        useOffscreenCache: true,
-        windowSize: 20,
-        gateFrameCount: 20,
+        windowSize: 330,
+        gateFrameCount: 80,  // Wait a bit longer so intro is guaranteed smooth
       };
     case 'LOW':
       return {
-        unifiedFrameCount: 44, // 20 + 24
-        batchConcurrency: 3,
+        unifiedFrameCount: 330,
+        batchConcurrency: 4,
         canvasDprCap: 1,
-        useOffscreenCache: true,
-        windowSize: 12,
-        gateFrameCount: 14,
+        windowSize: 330,
+        gateFrameCount: 100, // Conservative: ensure plenty of frames before unlock
       };
   }
 }

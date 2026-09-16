@@ -60,6 +60,8 @@ summary,
   filter: blur(120px);
   pointer-events: none;
   opacity: 0.07;
+  will-change: opacity;
+  transform: translateZ(0);
 }
 
 .ambient-blob-gold {

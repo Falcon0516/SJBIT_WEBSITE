@@ -18,7 +18,7 @@ const INTRO_END = 0.30;
 const GLOW_SCROLL_START = (53 / 150) * INTRO_END;
 const GLOW_SCROLL_END = (108 / 150) * INTRO_END;
 
-/* ─── Debug instrumentation (stripped from production unless env var set) ─── */
+/* ─── Debug instrumentation ─── */
 const DEBUG = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_ANIM === '1';
 function debugLog(...args: unknown[]) {
   if (DEBUG) console.debug('[HeroScrub]', ...args);
@@ -32,214 +32,15 @@ function getUnifiedFrameSrc(index: number, isMobile: boolean): string {
     : `/frames/unified/frame-${pad}.webp`;
 }
 
-/* ─── Frame type (offscreen canvas or image) ─── */
-type FrameData = HTMLCanvasElement | HTMLImageElement | null;
-
-/* ─── Rolling Window Frame Manager ─── */
-class FrameManager {
-  private frames: FrameData[];
-  private canvasPool: HTMLCanvasElement[] = [];
-  private srcs: string[];
-  private loading = new Set<number>();
-  private config: TierConfig;
-  private isMobile: boolean;
-  private paused = false;
-  private onFirstWindowReady: (() => void) | null = null;
-  private onProgressUpdate: ((loaded: number, total: number) => void) | null = null;
-  private onFrameLoaded: ((index: number) => void) | null = null;
-  private totalLoaded = 0;
-  private currentIndex = 0;
-  private activeFetches = 0;
-
-  constructor(
-    srcs: string[],
-    config: TierConfig,
-    isMobile: boolean,
-    callbacks: {
-      onFirstWindowReady?: () => void;
-      onProgressUpdate?: (loaded: number, total: number) => void;
-      onFrameLoaded?: (index: number) => void;
-    } = {}
-  ) {
-    this.frames = new Array(srcs.length).fill(null);
-    this.srcs = srcs;
-    this.config = config;
-    this.isMobile = isMobile;
-    this.onFirstWindowReady = callbacks.onFirstWindowReady || null;
-    this.onProgressUpdate = callbacks.onProgressUpdate || null;
-    this.onFrameLoaded = callbacks.onFrameLoaded || null;
-
-    // Pre-allocate the canvas pool for mobile to completely prevent GC leaks and Safari crashes
-    if (this.config.useOffscreenCache && this.isMobile) {
-      for (let i = 0; i < this.config.windowSize + 10; i++) {
-        this.canvasPool.push(document.createElement('canvas'));
-      }
-    }
-  }
-
-  get length() { return this.srcs.length; }
-  get loaded() { return this.totalLoaded; }
-
-  getFrame(index: number): FrameData {
-    return this.frames[index] ?? null;
-  }
-
-  /** Preload the first N frames (the "gate" window) and resolve when ready */
-  async preloadGate(): Promise<void> {
-    const gateCount = Math.min(this.config.gateFrameCount, this.srcs.length);
-    const batch: Promise<void>[] = [];
-    for (let i = 0; i < gateCount; i++) {
-      batch.push(this.loadFrame(i));
-      // Respect concurrency limit
-      if (batch.length >= this.config.batchConcurrency) {
-        await Promise.all(batch);
-        batch.length = 0;
-      }
-    }
-    if (batch.length > 0) await Promise.all(batch);
-    this.onFirstWindowReady?.();
-  }
-
-  /** Start the event-driven sliding window loader */
-  startQueue(): void {
-    this.paused = false;
-    this.checkQueue();
-  }
-
-  private checkQueue(): void {
-    if (this.paused) return;
-
-    const ahead = this.config.windowSize;
-    const behind = Math.floor(this.config.windowSize / 4);
-    
-    const lo = Math.max(0, this.currentIndex - behind);
-    const hi = Math.min(this.srcs.length - 1, this.currentIndex + ahead);
-
-    // 1. Evict frames safely OUTSIDE the window
-    if (this.config.windowSize < this.srcs.length) {
-      for (let i = 0; i < this.srcs.length; i++) {
-        if (i < lo || i > hi) {
-          // If currently loading, abort it
-          if (this.loading.has(i)) {
-            this.loading.delete(i);
-          }
-          
-          const frame = this.frames[i];
-          if (frame !== null) {
-            // Recycle canvas back to pool to prevent memory leaks!
-            if (frame instanceof HTMLCanvasElement) {
-              this.canvasPool.push(frame);
-            }
-            this.frames[i] = null;
-          }
-        }
-      }
-    }
-
-    // 2. Find missing frames WITHIN the window
-    const missing: number[] = [];
-    const fetchHi = this.config.windowSize >= this.srcs.length ? this.srcs.length - 1 : hi;
-    const fetchLo = this.config.windowSize >= this.srcs.length ? 0 : lo;
-
-    // Prioritize from currentIndex forwards, then backwards
-    for (let i = this.currentIndex; i <= fetchHi; i++) {
-      if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
-    }
-    for (let i = this.currentIndex - 1; i >= fetchLo; i--) {
-      if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
-    }
-
-    // 3. Start fetches until we hit concurrency limit
-    while (this.activeFetches < this.config.batchConcurrency && missing.length > 0) {
-      const idx = missing.shift()!;
-      this.activeFetches++;
-      this.loadFrame(idx).finally(() => {
-        this.activeFetches--;
-        this.checkQueue(); // Instantly trigger next fetch when one finishes
-      });
-    }
-  }
-
-  /** Update the current index for the background loop to follow */
-  ensureWindow(currentIndex: number): void {
-    if (this.currentIndex === currentIndex) return;
-    this.currentIndex = currentIndex;
-    this.checkQueue();
-  }
-
-  /** Load a single frame */
-  private async loadFrame(index: number): Promise<void> {
-    if (this.frames[index] !== null || this.loading.has(index)) return;
-    this.loading.add(index);
-
-    const t0 = DEBUG ? performance.now() : 0;
-
-    try {
-      const img = new window.Image();
-      img.src = this.srcs[index];
-
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error(`Failed to load ${this.srcs[index]}`));
-      });
-
-      // Decode on background thread first
-      try { await img.decode(); } catch {}
-
-      // EVICTION CHECK: If the user scrolled away while we were decoding, discard!
-      if (!this.loading.has(index)) return;
-
-      if (this.config.useOffscreenCache && this.isMobile) {
-        // Pop a pre-allocated canvas from the pool
-        const offscreen = this.canvasPool.pop();
-        if (offscreen) {
-          offscreen.width = img.naturalWidth || 640;
-          offscreen.height = img.naturalHeight || 360;
-          const oCtx = offscreen.getContext('2d', { alpha: false }); // Optimization for opaque frames
-          if (oCtx) {
-            oCtx.drawImage(img, 0, 0);
-            this.frames[index] = offscreen;
-          } else {
-            this.frames[index] = img;
-            this.canvasPool.push(offscreen); // Return broken canvas
-          }
-        } else {
-          // Pool exhausted (shouldn't happen with proper eviction), fallback
-          this.frames[index] = img;
-        }
-      } else {
-        this.frames[index] = img;
-      }
-
-      this.totalLoaded++;
-      this.onProgressUpdate?.(this.totalLoaded, this.srcs.length);
-      this.onFrameLoaded?.(index);
-
-      if (DEBUG) {
-        debugLog(`Frame ${index} loaded in ${(performance.now() - t0).toFixed(1)}ms`);
-      }
-    } catch {
-      // Network error — don't block forever
-      this.totalLoaded++;
-      this.onProgressUpdate?.(this.totalLoaded, this.srcs.length);
-    } finally {
-      this.loading.delete(index);
-    }
-  }
-
-  pause() { this.paused = true; }
-  resume() { this.paused = false; }
-
-  /** Release all frames */
-  destroy() {
-    this.paused = true;
-    this.frames.fill(null);
-    this.loading.clear();
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════
-   COMPONENT
+   COMPONENT — Simplified architecture:
+   
+   1. Load ALL 330 frames as HTMLImageElement (total ~5MB on mobile,
+      ~300MB decoded — well within 4GB device budget).
+   2. No sliding window, no eviction, no offscreen canvases.
+   3. Draw via rAF coalescing — never draw synchronously in onUpdate.
+   4. scrub: true (no smoothing delay = no oscillation/bounce-back).
+   5. No anticipatePin (causes iOS scroll traps).
    ═══════════════════════════════════════════════════════════ */
 export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -248,11 +49,12 @@ export default function HeroScrub() {
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
-  const unifiedMgrRef = useRef<FrameManager | null>(null);
+  // All 330 frames stored as simple image references
+  const framesRef = useRef<(HTMLImageElement | null)[]>([]);
   const activeTimelineIndexRef = useRef(-1);
   const lastProgressRef = useRef(0);
-  const lastDrawnUnifiedRef = useRef(0);
-  const tierRef = useRef<DeviceTier>('MEDIUM');
+  const lastDrawnFrameRef = useRef(-1);
+  const rafIdRef = useRef(0);
   const configRef = useRef<TierConfig>(getTierConfig('MEDIUM'));
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -269,197 +71,181 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  /* ─── Canvas draw helpers ─── */
-  const drawImageToCanvas = useCallback(
-    (ctx: CanvasRenderingContext2D, source: FrameData, cw: number, ch: number) => {
-      if (!source) return;
+  /* ─── Canvas draw: progress → frame index → drawImage ─── */
+  const paintFrame = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const { width: cw, height: ch } = canvas;
+    const frames = framesRef.current;
+    if (frames.length === 0) return;
 
-      let iw: number, ih: number;
-      if (source instanceof HTMLImageElement) {
-        if (!source.complete || source.naturalWidth === 0) return;
-        iw = source.naturalWidth;
-        ih = source.naturalHeight;
-      } else {
-        iw = source.width;
-        ih = source.height;
+    const progress = lastProgressRef.current;
+    const TOTAL_FRAMES = frames.length; // 330
+    const INTRO_FRAMES = 150;
+    const CAMPUS_FRAMES = 180;
+
+    // Map scroll progress → frame index (direct 1:1 mapping, no scaling)
+    let idx = 0;
+    if (progress <= INTRO_END) {
+      const p = Math.min(progress / INTRO_END, 1);
+      idx = Math.min(Math.floor(p * INTRO_FRAMES), INTRO_FRAMES - 1);
+    } else {
+      const p = Math.min((progress - INTRO_END) / (1 - INTRO_END), 1);
+      idx = INTRO_FRAMES + Math.min(Math.floor(p * CAMPUS_FRAMES), CAMPUS_FRAMES - 1);
+    }
+    idx = Math.max(0, Math.min(idx, TOTAL_FRAMES - 1));
+
+    // Skip redundant draws
+    if (idx === lastDrawnFrameRef.current) return;
+
+    // Find the frame to draw — use exact index, or nearest loaded fallback
+    let source = frames[idx];
+    if (!source || !source.complete || source.naturalWidth === 0) {
+      // Search nearby frames (prefer forward, then backward)
+      for (let d = 1; d < 30; d++) {
+        const fwd = frames[idx + d];
+        if (fwd && fwd.complete && fwd.naturalWidth > 0) { source = fwd; break; }
+        const bwd = frames[idx - d];
+        if (bwd && bwd.complete && bwd.naturalWidth > 0) { source = bwd; break; }
       }
+    }
 
-      const scale = Math.min(cw / iw, ch / ih);
-      const dw = iw * scale;
-      const dh = ih * scale;
-      ctx.drawImage(source, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
-    },
-    []
-  );
+    if (!source || !source.complete || source.naturalWidth === 0) return;
 
-  const drawSafeFrame = useCallback(
-    (
-      ctx: CanvasRenderingContext2D,
-      mgr: FrameManager,
-      index: number,
-      lastDrawnRef: React.MutableRefObject<number>,
-      cw: number,
-      ch: number,
-      alpha: number = 1
-    ) => {
-      const source = mgr.getFrame(index);
-      ctx.globalAlpha = alpha;
+    // Cover-fit the image into the canvas
+    const iw = source.naturalWidth;
+    const ih = source.naturalHeight;
+    const scale = Math.max(cw / iw, ch / ih);
+    const dw = Math.round(iw * scale);
+    const dh = Math.round(ih * scale);
+    const dx = Math.round((cw - dw) / 2);
+    const dy = Math.round((ch - dh) / 2);
 
-      if (source) {
-        drawImageToCanvas(ctx, source, cw, ch);
-        lastDrawnRef.current = index;
-      } else {
-        // Frame not yet loaded — draw closest available fallback
-        const fallback = mgr.getFrame(lastDrawnRef.current);
-        if (fallback) {
-          drawImageToCanvas(ctx, fallback, cw, ch);
-        }
-      }
-    },
-    [drawImageToCanvas]
-  );
+    ctx.drawImage(source, dx, dy, dw, dh);
+    lastDrawnFrameRef.current = idx;
+  }, []);
 
-  /* ─── Unified frame renderer ─── */
-  const drawFrame = useCallback(
-    (progress: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      const { width: cw, height: ch } = canvas;
-
-      const unifiedMgr = unifiedMgrRef.current;
-      const config = configRef.current;
-      if (!unifiedMgr || !config) return;
-
-      const introCount = 150; // Original intro count
-      const campusCount = 180; // Original campus count
-      const totalFrames = introCount + campusCount;
-
-      ctx.clearRect(0, 0, cw, ch);
-      ctx.fillStyle = '#050506';
-      ctx.fillRect(0, 0, cw, ch);
-      
-      let idx = 0;
-      if (progress <= INTRO_END) {
-        // Map 0 -> INTRO_END to intro frames
-        const p = progress / INTRO_END;
-        idx = Math.min(Math.floor(p * introCount), introCount - 1);
-      } else {
-        // Map INTRO_END -> 1.0 to campus frames
-        const p = (progress - INTRO_END) / (1 - INTRO_END);
-        idx = introCount + Math.min(Math.floor(p * campusCount), campusCount - 1);
-      }
-      
-      // Ensure we don't exceed the array bounds if config scaling is applied
-      idx = Math.max(0, Math.min(idx, totalFrames - 1));
-
-      // Actually, since unifiedFrameCount might be scaled (LOW/MEDIUM tiers step by 5 or 3):
-      // The arrays are generated with scaled counts.
-      // So we map to the *scaled* index!
-      const scaledIntroCount = Math.floor(config.unifiedFrameCount * (150 / 330));
-      const scaledCampusCount = config.unifiedFrameCount - scaledIntroCount;
-      
-      let scaledIdx = 0;
-      if (progress <= INTRO_END) {
-        const p = Math.min(progress / INTRO_END, 1);
-        scaledIdx = Math.min(Math.floor(p * scaledIntroCount), scaledIntroCount - 1);
-      } else {
-        const p = Math.min((progress - INTRO_END) / (1 - INTRO_END), 1);
-        scaledIdx = scaledIntroCount + Math.min(Math.floor(p * scaledCampusCount), scaledCampusCount - 1);
-      }
-
-      drawSafeFrame(ctx, unifiedMgr, scaledIdx, lastDrawnUnifiedRef, cw, ch);
-      unifiedMgr.ensureWindow(scaledIdx);
-    },
-    [drawSafeFrame]
-  );
+  /* ─── rAF-coalesced draw scheduler ─── */
+  const schedulePaint = useCallback(() => {
+    if (rafIdRef.current) return; // already scheduled
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = 0;
+      paintFrame();
+    });
+  }, [paintFrame]);
 
   /* ─── Task 7: Visibility handling ─── */
   useEffect(() => {
     const handler = () => {
-      if (document.visibilityState === 'hidden') {
-        unifiedMgrRef.current?.pause();
-        debugLog('Tab hidden — paused decoders');
-      } else {
-        unifiedMgrRef.current?.resume();
-        drawFrame(lastProgressRef.current);
-        debugLog('Tab visible — resumed decoders, resynced canvas');
+      if (document.visibilityState === 'visible') {
+        schedulePaint();
       }
     };
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
-  }, [drawFrame]);
+  }, [schedulePaint]);
 
-  /* ─── Preloader with rolling-window architecture (Tasks 2, 3, 5) ─── */
+  /* ─── Frame loader: load ALL 330 frames as HTMLImageElement ─── */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
     const isMobile = window.innerWidth < 768;
     const tier = getDeviceTier();
     const config = getTierConfig(tier);
-    tierRef.current = tier;
     configRef.current = config;
 
     debugLog(`Device tier: ${tier}`, config);
 
-    // Build unified frame source list with equalized density
-    const unifiedSrcs: string[] = [];
-    const step = tier === 'HIGH' ? 1 : Math.max(1, Math.floor(330 / config.unifiedFrameCount));
-    
-    for (let i = 0; i < config.unifiedFrameCount; i++) {
-      const frameNum = tier === 'HIGH' ? (i + 1) : (i * step + 1);
-      unifiedSrcs.push(getUnifiedFrameSrc(Math.min(frameNum, 330), isMobile));
+    const TOTAL = 330;
+    const srcs: string[] = [];
+    for (let i = 1; i <= TOTAL; i++) {
+      srcs.push(getUnifiedFrameSrc(i, isMobile));
     }
 
-    const totalFrames = unifiedSrcs.length;
-    let combinedLoaded = 0;
+    // Initialize frames array
+    const frames: (HTMLImageElement | null)[] = new Array(TOTAL).fill(null);
+    framesRef.current = frames;
+    let loadedCount = 0;
+    let gateReached = false;
 
-    const updateProgress = () => {
-      combinedLoaded++;
-      setLoadProgress(Math.min(100, Math.round((combinedLoaded / totalFrames) * 100)));
+    const onFrameReady = (index: number, img: HTMLImageElement) => {
+      frames[index] = img;
+      loadedCount++;
+      setLoadProgress(Math.min(100, Math.round((loadedCount / TOTAL) * 100)));
+
+      // Gate: unlock animation once we have enough frames for the intro
+      if (!gateReached && loadedCount >= config.gateFrameCount) {
+        gateReached = true;
+        setIsLoaded(true);
+        debugLog(`Gate reached at ${loadedCount} frames — unlocking`);
+      }
+
+      // Repaint if we're already scrolling
+      if (gateReached) {
+        schedulePaint();
+      }
     };
 
-    const repaintOnReady = () => {
-      drawFrame(lastProgressRef.current);
+    // Load frames in batches, respecting concurrency
+    let cancelled = false;
+    const loadBatch = async (startIdx: number) => {
+      if (cancelled) return;
+      const batchSize = config.batchConcurrency;
+      const batch: Promise<void>[] = [];
+
+      for (let i = startIdx; i < Math.min(startIdx + batchSize, TOTAL); i++) {
+        const idx = i;
+        const p = new Promise<void>((resolve) => {
+          const img = new window.Image();
+          img.decoding = 'async';
+          img.src = srcs[idx];
+          img.onload = () => {
+            // Decode off main thread
+            if (typeof img.decode === 'function') {
+              img.decode().then(() => {
+                if (!cancelled) onFrameReady(idx, img);
+                resolve();
+              }).catch(() => {
+                // decode failed but image loaded — use it anyway
+                if (!cancelled) onFrameReady(idx, img);
+                resolve();
+              });
+            } else {
+              if (!cancelled) onFrameReady(idx, img);
+              resolve();
+            }
+          };
+          img.onerror = () => {
+            loadedCount++;
+            setLoadProgress(Math.min(100, Math.round((loadedCount / TOTAL) * 100)));
+            resolve();
+          };
+        });
+        batch.push(p);
+      }
+
+      await Promise.all(batch);
+
+      // Continue with next batch
+      const nextStart = startIdx + batchSize;
+      if (nextStart < TOTAL && !cancelled) {
+        // Yield to main thread between batches
+        await new Promise(r => setTimeout(r, 0));
+        await loadBatch(nextStart);
+      }
     };
 
-    const unifiedMgr = new FrameManager(unifiedSrcs, config, isMobile, {
-      onProgressUpdate: updateProgress,
-      onFrameLoaded: repaintOnReady,
-    });
+    loadBatch(0);
 
-    unifiedMgrRef.current = unifiedMgr;
-
-    // Loading Pipeline:
-    // Phase 1 (gate): Load first window of unified timeline (intro frames) → unlock scrubbing
-    // Phase 2 (stream): Background-load remaining frames sequentially
-    const loadPipeline = async () => {
-      // Gate: load minimum frames
-      await unifiedMgr.preloadGate();
-
-      debugLog('Gate frames ready — unlocking scrub');
-      setIsLoaded(true);
-
-      // Small delay to let React paint the unlocked state before we resume heavy work
-      await new Promise<void>(r => setTimeout(r, 200));
-
-      // Stream: intelligent sliding window background loader
-      unifiedMgr.startQueue();
-
-      debugLog('Sliding window queue started');
-    };
-
-    loadPipeline();
-
-    // Cleanup: release all frames on unmount
     return () => {
-      unifiedMgr.destroy();
-      unifiedMgrRef.current = null;
+      cancelled = true;
+      framesRef.current = [];
     };
-  }, [prefersReducedMotion, drawFrame]);
+  }, [prefersReducedMotion, schedulePaint]);
 
-  /* ─── ScrollTrigger setup (Task 4: dvh fix) ─── */
+  /* ─── ScrollTrigger setup ─── */
   useEffect(() => {
     if (prefersReducedMotion || !isLoaded) return;
 
@@ -470,63 +256,69 @@ export default function HeroScrub() {
 
     const config = configRef.current;
 
-    // Initial canvas sizing
+    // Canvas sizing
     const resizeCanvas = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, config.canvasDprCap);
       const w = window.innerWidth;
       const h = window.innerHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
-      drawFrame(lastProgressRef.current);
+      lastDrawnFrameRef.current = -1; // force redraw
+      paintFrame();
     };
 
     resizeCanvas();
 
-    // Task 4: Debounced resize that ignores pure address-bar height deltas
-    let lastVVH = window.visualViewport?.height ?? window.innerHeight;
+    // Debounced resize — ignore iOS address bar changes
+    let lastWidth = window.innerWidth;
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-
     const handleResize = () => {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        const newVVH = window.visualViewport?.height ?? window.innerHeight;
-        const delta = Math.abs(newVVH - lastVVH);
-        // Ignore changes < 100px (likely just address bar)
-        if (delta > 100 || Math.abs(window.innerWidth - canvas.clientWidth) > 1) {
-          lastVVH = newVVH;
+        // Only resize if WIDTH actually changed (height-only = address bar)
+        if (Math.abs(window.innerWidth - lastWidth) > 1) {
+          lastWidth = window.innerWidth;
           resizeCanvas();
           ScrollTrigger.refresh();
-          debugLog('Resize: refreshed ScrollTrigger');
         }
-      }, 150);
+      }, 200);
     };
 
     window.addEventListener('resize', handleResize, { passive: true });
     window.addEventListener('orientationchange', () => {
       setTimeout(() => {
+        lastWidth = window.innerWidth;
         resizeCanvas();
         ScrollTrigger.refresh();
-      }, 300);
+      }, 400);
     });
 
-    // Draw initial frame
-    drawFrame(0);
+    // Draw frame 0
+    paintFrame();
 
     const timeline = content.heroOverlayTimeline;
+
+    // Tell GSAP to ignore mobile resize (address bar) globally
+    ScrollTrigger.config({ ignoreMobileResize: true });
 
     const trigger = ScrollTrigger.create({
       trigger: container,
       start: 'top top',
       end: 'bottom bottom',
       pin: sticky,
+      // KEY FIX: scrub: true (instant, no smoothing)
+      // scrub: 0.35 was causing the "back and forth" oscillation on iOS
+      // because the lerp overshoots when momentum scroll fires rapid deltas
       scrub: true,
+      fastScrollEnd: true,
+      // NO anticipatePin — it causes scroll position fights on iOS
       onUpdate: (self) => {
         const progress = self.progress;
         lastProgressRef.current = progress;
 
-        // Text overlay synchronization
+        // Text overlay sync
         const tIndex = timeline.findIndex(
           (frame) => progress >= frame.scrollStart && progress <= frame.scrollEnd
         );
@@ -540,10 +332,12 @@ export default function HeroScrub() {
           setActiveTimelineIndex(resolvedIndex);
         }
 
+        // Scroll cue
         if (cueRef.current) {
           cueRef.current.style.opacity = progress < 0.98 ? '1' : '0';
         }
 
+        // Glow overlay
         if (glowRef.current) {
           if (progress >= GLOW_SCROLL_START && progress <= GLOW_SCROLL_END) {
             const glowMid = (GLOW_SCROLL_START + GLOW_SCROLL_END) / 2;
@@ -555,7 +349,8 @@ export default function HeroScrub() {
           }
         }
 
-        drawFrame(progress);
+        // Schedule canvas repaint (coalesced via rAF)
+        schedulePaint();
       },
     });
 
@@ -563,13 +358,14 @@ export default function HeroScrub() {
       trigger.kill();
       window.removeEventListener('resize', handleResize);
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [prefersReducedMotion, isLoaded, drawFrame]);
+  }, [prefersReducedMotion, isLoaded, paintFrame, schedulePaint]);
 
   /* ─── Reduced Motion Fallback ─── */
   if (prefersReducedMotion) {
     return (
-      <section className="relative w-full h-[100vh] bg-[#050506] overflow-hidden flex items-center justify-center">
+      <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden flex items-center justify-center">
         <Image src="/images/hero-poster.jpg" alt="SJBIT Campus" fill className="object-contain md:object-cover" priority />
         <div className="absolute inset-0 bg-black/50" />
         <HeroOverlay activeFrameIndex={content.heroOverlayTimeline.length - 1} prefersReducedMotion={true} />
@@ -578,8 +374,12 @@ export default function HeroScrub() {
   }
 
   return (
-    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]">
-      <div ref={stickyRef} className="w-full h-[100vh] overflow-hidden relative">
+    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300dvh] md:h-[700dvh]">
+      <div
+        ref={stickyRef}
+        className="w-full h-[100dvh] overflow-hidden relative"
+        style={{ transform: 'translateZ(0)', WebkitBackfaceVisibility: 'hidden' }}
+      >
         {/* Ambient gold glow */}
         <div className="ambient-blob ambient-blob-gold w-[320px] h-[320px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-25" />
 
@@ -588,17 +388,18 @@ export default function HeroScrub() {
           <Image src="/images/hero-poster.jpg" alt="Loading..." fill className="object-contain md:object-cover blur-sm" priority />
         </div>
 
-        {/* Single unified canvas for ALL devices */}
+        {/* Canvas */}
         <canvas
           ref={canvasRef}
           className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
         />
 
         {/* Golden glow overlay */}
         <div
           ref={glowRef}
           className="absolute inset-0 pointer-events-none z-[5] hidden md:block"
-          style={{ opacity: 0, transition: 'opacity 0.5s ease-out' }}
+          style={{ opacity: 0, willChange: 'opacity', transform: 'translateZ(0)' }}
         >
           <div
             className="absolute inset-0"
