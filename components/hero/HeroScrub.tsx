@@ -14,7 +14,7 @@ gsap.registerPlugin(ScrollTrigger);
 const INTRO_TOTAL = 150;
 const CAMPUS_TOTAL = 180;
 
-const MOBILE_INTRO_COUNT = 30; // Better fidelity on mobile
+const MOBILE_INTRO_COUNT = 30;
 const MOBILE_CAMPUS_COUNT = 36;
 
 /* ─── Scroll boundaries ─── */
@@ -23,7 +23,7 @@ const TRANSITION_START = 0.26;
 const TRANSITION_END = 0.34;
 const CAMPUS_START = 0.30;
 
-/* ─── Glow overlay boundaries (intro frames 53-108 out of 150) ─── */
+/* ─── Glow overlay boundaries ─── */
 const GLOW_SCROLL_START = (53 / 150) * INTRO_END;
 const GLOW_SCROLL_END = (108 / 150) * INTRO_END;
 
@@ -53,7 +53,16 @@ function isLowEndDevice(): boolean {
 export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
+  
+  // Desktop Canvas Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Mobile DOM Scrub Refs (to bypass iOS WebKit Canvas bug)
+  const mobileIntroContainerRef = useRef<HTMLDivElement>(null);
+  const mobileCampusContainerRef = useRef<HTMLDivElement>(null);
+  const lastActiveMobileIntroRef = useRef<number>(-1);
+  const lastActiveMobileCampusRef = useRef<number>(-1);
+
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
@@ -69,6 +78,10 @@ export default function HeroScrub() {
   const [loadProgress, setLoadProgress] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [activeTimelineIndex, setActiveTimelineIndex] = useState(-1);
+  
+  // Architecture toggle state
+  const isMobileStateRef = useRef(false);
+  const [isMobileRender, setIsMobileRender] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -78,7 +91,7 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  /* ─── Unified Draw Helper for ImageBitmap and HTMLImageElement ─── */
+  /* ─── Desktop: Draw Helper for Canvas ─── */
   const drawImageToCanvas = useCallback(
     (ctx: CanvasRenderingContext2D, frame: FrameCache, cw: number, ch: number) => {
       if (!frame) return;
@@ -89,12 +102,11 @@ export default function HeroScrub() {
         iw = frame.naturalWidth;
         ih = frame.naturalHeight;
       } else {
-        // ImageBitmap
         iw = frame.width;
         ih = frame.height;
       }
 
-      const scale = Math.min(cw / iw, ch / ih); // object-fit: contain
+      const scale = Math.min(cw / iw, ch / ih);
       const dw = iw * scale;
       const dh = ih * scale;
       const dx = (cw - dw) / 2;
@@ -121,7 +133,7 @@ export default function HeroScrub() {
         if ('naturalWidth' in frame) {
           isReady = frame.complete && frame.naturalWidth > 0;
         } else {
-          isReady = true; // ImageBitmap is always ready
+          isReady = true;
         }
       }
 
@@ -141,16 +153,7 @@ export default function HeroScrub() {
   /* ─── Unified Frame Renderer ─── */
   const drawFrame = useCallback(
     (progress: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      const { width: cw, height: ch } = canvas;
-      
-      ctx.clearRect(0, 0, cw, ch);
-      ctx.fillStyle = '#050506';
-      ctx.fillRect(0, 0, cw, ch);
-
+      const isMobile = isMobileStateRef.current;
       const introFrames = introFramesRef.current;
       const campusFrames = campusFramesRef.current;
 
@@ -158,17 +161,22 @@ export default function HeroScrub() {
 
       let introProgress = 0;
       let campusProgress = 0;
+      let iIdx = 0;
+      let cIdx = 0;
+      let introAlpha = 1;
+      let campusAlpha = 0;
 
+      // Calculate phases mathematically
       if (progress <= TRANSITION_START) {
         currentPhaseRef.current = 'intro';
         introProgress = Math.min(progress / INTRO_END, 1);
-        const idx = Math.min(Math.floor(introProgress * introFrames.length), introFrames.length - 1);
-        drawSafeFrame(ctx, introFrames, idx, lastDrawnIntroRef, cw, ch);
+        iIdx = Math.min(Math.floor(introProgress * introFrames.length), introFrames.length - 1);
       } else if (progress >= TRANSITION_END) {
         currentPhaseRef.current = 'campus';
         campusProgress = Math.min((progress - CAMPUS_START) / (1 - CAMPUS_START), 1);
-        const idx = Math.min(Math.floor(campusProgress * campusFrames.length), campusFrames.length - 1);
-        drawSafeFrame(ctx, campusFrames, idx, lastDrawnCampusRef, cw, ch);
+        cIdx = Math.min(Math.floor(campusProgress * campusFrames.length), campusFrames.length - 1);
+        introAlpha = 0;
+        campusAlpha = 1;
       } else {
         currentPhaseRef.current = 'transition';
         introProgress = Math.min(progress / INTRO_END, 1);
@@ -177,22 +185,73 @@ export default function HeroScrub() {
         const fadeProgress = (progress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
         const fade = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
         
-        const iIdx = Math.min(Math.floor(introProgress * introFrames.length), introFrames.length - 1);
-        const cIdx = Math.max(0, Math.min(Math.floor(campusProgress * campusFrames.length), campusFrames.length - 1));
+        iIdx = Math.min(Math.floor(introProgress * introFrames.length), introFrames.length - 1);
+        cIdx = Math.max(0, Math.min(Math.floor(campusProgress * campusFrames.length), campusFrames.length - 1));
         
-        drawSafeFrame(ctx, introFrames, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
-        drawSafeFrame(ctx, campusFrames, cIdx, lastDrawnCampusRef, cw, ch, fade);
+        introAlpha = 1 - fade;
+        campusAlpha = fade;
+      }
+
+      if (isMobile) {
+        // --- MOBILE ONLY: Highly Optimized DOM Scrubber ---
+        // Bypasses the WebKit momentum-scroll canvas drop by toggling CSS opacity.
+        // We track the last active index and ONLY update 2 DOM elements per tick for max FPS.
+        if (mobileIntroContainerRef.current) {
+          const introNodes = mobileIntroContainerRef.current.children;
+          if (lastActiveMobileIntroRef.current !== -1 && lastActiveMobileIntroRef.current !== iIdx) {
+            (introNodes[lastActiveMobileIntroRef.current] as HTMLElement).style.opacity = '0';
+          }
+          if (introAlpha > 0) {
+            (introNodes[iIdx] as HTMLElement).style.opacity = String(introAlpha);
+            lastActiveMobileIntroRef.current = iIdx;
+          } else if (lastActiveMobileIntroRef.current !== -1) {
+            (introNodes[lastActiveMobileIntroRef.current] as HTMLElement).style.opacity = '0';
+            lastActiveMobileIntroRef.current = -1;
+          }
+        }
+
+        if (mobileCampusContainerRef.current) {
+          const campusNodes = mobileCampusContainerRef.current.children;
+          if (lastActiveMobileCampusRef.current !== -1 && lastActiveMobileCampusRef.current !== cIdx) {
+            (campusNodes[lastActiveMobileCampusRef.current] as HTMLElement).style.opacity = '0';
+          }
+          if (campusAlpha > 0) {
+            (campusNodes[cIdx] as HTMLElement).style.opacity = String(campusAlpha);
+            lastActiveMobileCampusRef.current = cIdx;
+          } else if (lastActiveMobileCampusRef.current !== -1) {
+            (campusNodes[lastActiveMobileCampusRef.current] as HTMLElement).style.opacity = '0';
+            lastActiveMobileCampusRef.current = -1;
+          }
+        }
+      } else {
+        // --- DESKTOP ONLY: Canvas with ImageBitmap ---
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const { width: cw, height: ch } = canvas;
+        
+        ctx.clearRect(0, 0, cw, ch);
+        ctx.fillStyle = '#050506';
+        ctx.fillRect(0, 0, cw, ch);
+
+        if (introAlpha > 0) drawSafeFrame(ctx, introFrames, iIdx, lastDrawnIntroRef, cw, ch, introAlpha);
+        if (campusAlpha > 0) drawSafeFrame(ctx, campusFrames, cIdx, lastDrawnCampusRef, cw, ch, campusAlpha);
         ctx.globalAlpha = 1;
       }
     },
     [drawSafeFrame]
   );
 
-  /* ─── Robust Image Preloader with ImageBitmap Caching ─── */
+  /* ─── Robust Preloader ─── */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
+    // Detect mobile for architecture toggle
     const isMobile = window.innerWidth < 768;
+    isMobileStateRef.current = isMobile;
+    setIsMobileRender(isMobile);
+    
     const lowEnd = isLowEndDevice();
 
     const introCount = (isMobile || lowEnd) ? MOBILE_INTRO_COUNT : INTRO_TOTAL;
@@ -203,7 +262,6 @@ export default function HeroScrub() {
     const totalFrames = introCount + campusCount;
     let loadedCount = 0;
     
-    // Arrays to hold the cache
     const loadedIntroFrames: FrameCache[] = new Array(introCount).fill(null);
     const loadedCampusFrames: FrameCache[] = new Array(campusCount).fill(null);
 
@@ -211,11 +269,34 @@ export default function HeroScrub() {
       loadedCount++;
       setLoadProgress(Math.min(100, Math.round((loadedCount / totalFrames) * 100)));
 
-      // Strict Loading Gate: Unlock ONLY when 100% of frames are downloaded and decoded to VRAM
       if (loadedCount >= totalFrames) {
         introFramesRef.current = loadedIntroFrames;
         campusFramesRef.current = loadedCampusFrames;
-        // Small delay to ensure React commits the UI and Canvas is ready
+        
+        if (isMobile) {
+          // For mobile DOM scrubber, append the images to the DOM containers
+          if (mobileIntroContainerRef.current) {
+            mobileIntroContainerRef.current.innerHTML = '';
+            loadedIntroFrames.forEach(frame => {
+              if (frame && 'naturalWidth' in frame) { // Only HTMLImageElement is used on mobile
+                frame.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none will-change-[opacity]';
+                frame.style.opacity = '0';
+                mobileIntroContainerRef.current!.appendChild(frame);
+              }
+            });
+          }
+          if (mobileCampusContainerRef.current) {
+            mobileCampusContainerRef.current.innerHTML = '';
+            loadedCampusFrames.forEach(frame => {
+              if (frame && 'naturalWidth' in frame) {
+                frame.className = 'absolute inset-0 w-full h-full object-contain pointer-events-none will-change-[opacity]';
+                frame.style.opacity = '0';
+                mobileCampusContainerRef.current!.appendChild(frame);
+              }
+            });
+          }
+        }
+        
         setTimeout(() => {
           setIsLoaded(true);
           drawFrame(0);
@@ -223,39 +304,33 @@ export default function HeroScrub() {
       }
     };
 
-    // VRAM caching logic using createImageBitmap (guarantees zero-stutter on iOS Safari)
     const loadFrameToVRAM = async (src: string, targetArray: FrameCache[], index: number) => {
-      try {
-        if (typeof window.createImageBitmap !== 'undefined') {
-          const res = await fetch(src);
-          if (!res.ok) throw new Error('Fetch failed');
-          const blob = await res.blob();
-          const bitmap = await window.createImageBitmap(blob);
-          targetArray[index] = bitmap;
-          onProgress();
-          return;
+      // ON DESKTOP: Try VRAM cache first for max canvas performance
+      if (!isMobile) {
+        try {
+          if (typeof window.createImageBitmap !== 'undefined') {
+            const res = await fetch(src);
+            if (!res.ok) throw new Error('Fetch failed');
+            const blob = await res.blob();
+            const bitmap = await window.createImageBitmap(blob);
+            targetArray[index] = bitmap;
+            onProgress();
+            return;
+          }
+        } catch (e) {
+          // Fallback below
         }
-      } catch (e) {
-        // Fallback to HTMLImageElement if fetch or createImageBitmap fails
       }
       
+      // ON MOBILE: Always use HTMLImageElement for the DOM scrubber
       const img = new window.Image();
       img.src = src;
-      if (img.decode) {
-        img.decode().then(() => {
-          targetArray[index] = img;
-          onProgress();
-        }).catch(() => {
-          img.onload = () => { targetArray[index] = img; onProgress(); };
-          img.onerror = onProgress; // Count as loaded to not block UI forever
-        });
-      } else {
-        img.onload = () => { targetArray[index] = img; onProgress(); };
-        img.onerror = onProgress;
-      }
+      // We don't use img.decode() on mobile iOS because of the WebKit GC bug.
+      // onload guarantees it's in memory for the DOM.
+      img.onload = () => { targetArray[index] = img; onProgress(); };
+      img.onerror = onProgress; 
     };
 
-    // Batch loading to prevent network choking (load 10 at a time)
     const loadAll = async () => {
       const queue: (() => Promise<void>)[] = [];
       
@@ -286,27 +361,29 @@ export default function HeroScrub() {
 
     const container = containerRef.current;
     const sticky = stickyRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !sticky || !canvas) return;
+    if (!container || !sticky) return;
+    
+    if (!isMobileStateRef.current && !canvasRef.current) return;
 
-    const isMobile = window.innerWidth < 768;
-    const lowEnd = isLowEndDevice();
-
-    // Size the unified canvas — limit DPR to save GPU bandwidth
-    const resizeCanvas = () => {
-      const maxDpr = isMobile || lowEnd ? 1 : 2;
-      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+    const resizeView = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
+      
+      if (!isMobileStateRef.current && canvasRef.current) {
+        const canvas = canvasRef.current;
+        const maxDpr = 2;
+        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+      }
+      
       drawFrame(lastProgressRef.current);
     };
     
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas, { passive: true });
+    resizeView();
+    window.addEventListener('resize', resizeView, { passive: true });
 
     const timeline = content.heroOverlayTimeline;
 
@@ -320,7 +397,6 @@ export default function HeroScrub() {
         const progress = self.progress;
         lastProgressRef.current = progress;
 
-        // 1. Perfectly synchronize text overlay based on raw scroll progress
         const tIndex = timeline.findIndex(
           (frame) => progress >= frame.scrollStart && progress <= frame.scrollEnd
         );
@@ -334,12 +410,10 @@ export default function HeroScrub() {
           setActiveTimelineIndex(resolvedIndex);
         }
 
-        // 2. Scroll cue visibility
         if (cueRef.current) {
           cueRef.current.style.opacity = progress < 0.98 ? '1' : '0';
         }
 
-        // 3. Glow overlay
         if (glowRef.current) {
           if (progress >= GLOW_SCROLL_START && progress <= GLOW_SCROLL_END) {
             const glowMid = (GLOW_SCROLL_START + GLOW_SCROLL_END) / 2;
@@ -351,28 +425,20 @@ export default function HeroScrub() {
           }
         }
 
-        // 4. Draw canvas synchronously
         drawFrame(progress);
       },
     });
 
     return () => {
       trigger.kill();
-      window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('resize', resizeView);
     };
   }, [prefersReducedMotion, isLoaded, drawFrame]);
 
-  // ─── Reduced Motion Fallback ───
   if (prefersReducedMotion) {
     return (
       <section className="relative w-full h-[100dvh] bg-[#050506] overflow-hidden flex items-center justify-center">
-        <Image
-          src="/images/hero-poster.jpg"
-          alt="SJBIT Campus"
-          fill
-          className="object-contain md:object-cover"
-          priority
-        />
+        <Image src="/images/hero-poster.jpg" alt="SJBIT Campus" fill className="object-contain md:object-cover" priority />
         <div className="absolute inset-0 bg-black/50" />
         <HeroOverlay activeFrameIndex={content.heroOverlayTimeline.length - 1} prefersReducedMotion={true} />
       </section>
@@ -380,184 +446,69 @@ export default function HeroScrub() {
   }
 
   return (
-    <section
-      ref={containerRef}
-      className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]"
-    >
-      <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden">
-        {/* Ambient gold glow */}
+    <section ref={containerRef} className="relative w-full bg-[#050506] h-[300vh] md:h-[700vh]">
+      <div ref={stickyRef} className="w-full h-[100dvh] overflow-hidden relative">
         <div className="ambient-blob ambient-blob-gold w-[320px] h-[320px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-25" />
 
-        {/* Poster placeholder */}
-        <div
-          className={`absolute inset-0 transition-opacity duration-1000 ${
-            isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
-          <Image
-            src="/images/hero-poster.jpg"
-            alt="Loading..."
-            fill
-            className="object-contain md:object-cover blur-sm"
-            priority
-          />
+        <div className={`absolute inset-0 transition-opacity duration-1000 ${isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <Image src="/images/hero-poster.jpg" alt="Loading..." fill className="object-contain md:object-cover blur-sm" priority />
         </div>
 
-        {/* Unified High-Performance GPU Canvas */}
-        <canvas
-          ref={canvasRef}
-          className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{ willChange: 'transform' }}
-        />
+        {/* ─── DUAL ARCHITECTURE: CANVAS (DESKTOP) OR DOM (MOBILE) ─── */}
+        {!isMobileRender && (
+          <canvas
+            ref={canvasRef}
+            className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+            style={{ willChange: 'transform' }}
+          />
+        )}
+        
+        <div
+          className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ${isLoaded && isMobileRender ? 'opacity-100' : 'opacity-0'} pointer-events-none`}
+        >
+          <div ref={mobileIntroContainerRef} className="absolute inset-0 w-full h-full" />
+          <div ref={mobileCampusContainerRef} className="absolute inset-0 w-full h-full" />
+        </div>
 
-        {/* Golden glow overlay for grand intro moments */}
+        {/* Glow overlay */}
         <div
           ref={glowRef}
           className="absolute inset-0 pointer-events-none z-[5]"
-          style={{
-            opacity: 0,
-            willChange: 'opacity',
-            transition: 'opacity 0.5s ease-out',
-          }}
+          style={{ opacity: 0, willChange: 'opacity', transition: 'opacity 0.5s ease-out' }}
         >
-          <div
-            className="absolute inset-0"
-            style={{
-              background: `
-                radial-gradient(ellipse 70% 50% at 50% 50%, rgba(212,175,122,0.22) 0%, transparent 60%),
-                radial-gradient(ellipse 40% 35% at 30% 45%, rgba(212,175,122,0.12) 0%, transparent 50%),
-                radial-gradient(ellipse 40% 35% at 70% 55%, rgba(212,175,122,0.12) 0%, transparent 50%)
-              `,
-              mixBlendMode: 'screen',
-              animation: 'glow-breathe 3s ease-in-out infinite',
-            }}
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background: `conic-gradient(
-                from 0deg at 50% 50%,
-                transparent 0deg,
-                rgba(212,175,122,0.06) 20deg,
-                transparent 40deg,
-                transparent 90deg,
-                rgba(212,175,122,0.04) 110deg,
-                transparent 130deg,
-                transparent 180deg,
-                rgba(212,175,122,0.06) 200deg,
-                transparent 220deg,
-                transparent 270deg,
-                rgba(212,175,122,0.04) 290deg,
-                transparent 310deg
-              )`,
-              animation: 'glow-rotate 12s linear infinite',
-              mixBlendMode: 'screen',
-            }}
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'linear-gradient(to bottom, rgba(212,175,122,0.08) 0%, transparent 30%, transparent 70%, rgba(212,175,122,0.06) 100%)',
-            }}
-          />
+          <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse 70% 50% at 50% 50%, rgba(212,175,122,0.22) 0%, transparent 60%)`, mixBlendMode: 'screen', animation: 'glow-breathe 3s ease-in-out infinite' }} />
         </div>
 
-        {/* Gradient overlay for text readability */}
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/40 via-transparent to-[#050506]/60" />
 
-        {/* Hero text overlay — completely unified synchronization */}
         <HeroOverlay activeFrameIndex={activeTimelineIndex} />
 
-        {/* Skip to Events */}
         <button
           onClick={() => {
             const eventsSection = document.getElementById('events');
             if (eventsSection) eventsSection.scrollIntoView({ behavior: 'smooth' });
           }}
           className={`cursor-interact absolute bottom-16 sm:bottom-20 right-4 sm:right-8 z-20 group inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-2.5 rounded-full text-[11px] sm:text-xs font-mono tracking-wider uppercase transition-all duration-1000 pointer-events-auto min-h-[44px] min-w-[44px] ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{
-            background: 'rgba(5, 5, 6, 0.4)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(212, 175, 122, 0.3)',
-            color: '#D4AF7A',
-            animation: 'float 3s ease-in-out infinite',
-            touchAction: 'manipulation',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(212, 175, 122, 0.15)';
-            e.currentTarget.style.borderColor = 'rgba(212, 175, 122, 0.6)';
-            e.currentTarget.style.boxShadow = '0 0 20px rgba(212, 175, 122, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(5, 5, 6, 0.4)';
-            e.currentTarget.style.borderColor = 'rgba(212, 175, 122, 0.3)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
+          style={{ background: 'rgba(5, 5, 6, 0.4)', backdropFilter: 'blur(16px)', border: '1px solid rgba(212, 175, 122, 0.3)', color: '#D4AF7A', animation: 'float 3s ease-in-out infinite' }}
         >
           Skip to Events
           <ArrowDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform group-hover:translate-y-0.5" />
         </button>
 
-        {/* Scroll cue */}
-        <div
-          ref={cueRef}
-          className={`absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-all duration-1000 pointer-events-none ${isLoaded ? 'opacity-100' : 'opacity-0 translate-y-4'}`}
-        >
-          <span
-            className="text-[10px] sm:text-xs font-mono tracking-[0.2em] uppercase mb-2"
-            style={{ color: '#D4AF7A' }}
-          >
-            Scroll to explore
-          </span>
-          <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce" style={{ color: '#D4AF7A' }} />
+        <div ref={cueRef} className={`absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center transition-all duration-1000 pointer-events-none ${isLoaded ? 'opacity-100' : 'opacity-0 translate-y-4'}`}>
+          <span className="text-[10px] sm:text-xs font-mono tracking-[0.2em] uppercase mb-2 text-[#D4AF7A]">Scroll to explore</span>
+          <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce text-[#D4AF7A]" />
         </div>
 
-        {/* ── STRICT LOADING GATE — blocks completely until 100% VRAM cache is filled ── */}
-        <div
-          className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#050506] transition-opacity duration-1000 ${
-            isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
-          <span
-            className="font-serif text-6xl sm:text-8xl tracking-tighter select-none"
-            style={{
-              color: '#D4AF7A',
-              animation: 'pulse-glow 2s ease-in-out infinite',
-              textShadow: '0 0 40px rgba(212,175,122,0.3)',
-            }}
-          >
-            XXV
-          </span>
-          <p
-            className="mt-4 font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase"
-            style={{ color: 'rgba(212,175,122,0.5)' }}
-          >
-            Silver Jubilee
-          </p>
-          <p
-            className="mt-6 font-mono text-[10px] sm:text-xs tracking-wider uppercase animate-pulse"
-            style={{ color: '#F5F3EE' }}
-          >
-            Loading Site Content... Please Wait
-          </p>
-          <div className="mt-4 w-40 sm:w-48 h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${loadProgress}%`,
-                background: 'linear-gradient(90deg, #D4AF7A, #E8C992)',
-                transition: 'width 0.2s ease-out',
-                boxShadow: '0 0 10px rgba(212,175,122,0.5)'
-              }}
-            />
+        {/* LOADING GATE */}
+        <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#050506] transition-opacity duration-1000 ${isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <span className="font-serif text-6xl sm:text-8xl tracking-tighter select-none text-[#D4AF7A]" style={{ animation: 'pulse-glow 2s ease-in-out infinite', textShadow: '0 0 40px rgba(212,175,122,0.3)' }}>XXV</span>
+          <p className="mt-4 font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase text-[#D4AF7A]/50">Silver Jubilee</p>
+          <p className="mt-6 font-mono text-[10px] sm:text-xs tracking-wider uppercase animate-pulse text-[#F5F3EE]">Loading Site Content... Please Wait</p>
+          <div className="mt-4 w-40 sm:w-48 h-[3px] rounded-full overflow-hidden bg-white/5">
+            <div className="h-full rounded-full transition-all duration-200" style={{ width: `${loadProgress}%`, background: 'linear-gradient(90deg, #D4AF7A, #E8C992)', boxShadow: '0 0 10px rgba(212,175,122,0.5)' }} />
           </div>
-          <span
-            className="mt-2 font-mono text-[9px] tracking-widest"
-            style={{ color: 'rgba(212,175,122,0.6)' }}
-          >
-            {loadProgress}%
-          </span>
+          <span className="mt-2 font-mono text-[9px] tracking-widest text-[#D4AF7A]/60">{loadProgress}%</span>
         </div>
       </div>
     </section>

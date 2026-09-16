@@ -15,6 +15,7 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
   const emblemRef = useRef<HTMLDivElement>(null);
   const ctaRef = useRef<HTMLDivElement>(null);
   const [showEmblem, setShowEmblem] = useState(false);
+  const [playFailed, setPlayFailed] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const { site } = content;
 
@@ -31,7 +32,9 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          video.play().catch(() => {/* autoplay blocked, that's fine */});
+          video.play().catch(() => {
+            setPlayFailed(true);
+          });
         } else {
           video.pause();
         }
@@ -89,6 +92,7 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
           playsInline
           loop
           autoPlay
+          controls={playFailed}
           preload="metadata"
           className="w-full h-full object-cover"
           style={{
@@ -96,6 +100,22 @@ export default function LegacyReveal({ onRegisterClick }: { onRegisterClick?: ()
             transition: 'opacity 1.5s ease-in-out',
           }}
         />
+
+        {/* Play fallback for iOS Low Power Mode */}
+        {playFailed && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 pointer-events-none">
+            <button
+              onClick={() => {
+                if (videoRef.current) {
+                  videoRef.current.play().then(() => setPlayFailed(false));
+                }
+              }}
+              className="pointer-events-auto px-6 py-3 rounded-full bg-[#D4AF7A]/20 text-[#D4AF7A] border border-[#D4AF7A]/50 backdrop-blur-md uppercase tracking-widest text-xs font-mono transition-all hover:bg-[#D4AF7A]/40"
+            >
+              Tap to Play Video
+            </button>
+          </div>
+        )}
 
         {/* Gradient overlays */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-transparent to-transparent" />
