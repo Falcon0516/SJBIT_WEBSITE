@@ -14,11 +14,11 @@ gsap.registerPlugin(ScrollTrigger);
 const INTRO_TOTAL = 150;
 const CAMPUS_TOTAL = 180;
 
-// iOS gets dramatically fewer frames to stay under WebKit memory limits
+// Mobile gets fewer frames but enough for smooth scrubbing
 const MOBILE_INTRO_COUNT = 24;
 const MOBILE_CAMPUS_COUNT = 30;
 
-/* ─── Scroll boundaries ─── */
+/* ─── Scroll boundaries (same for desktop and mobile) ─── */
 const INTRO_END = 0.30;
 const TRANSITION_START = 0.26;
 const TRANSITION_END = 0.34;
@@ -49,12 +49,6 @@ function isLowEndDevice(): boolean {
   return cores <= 4 && memory <= 4;
 }
 
-function isIOSDevice(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-}
-
 export default function HeroScrub() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
@@ -62,28 +56,19 @@ export default function HeroScrub() {
   const cueRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
 
-  // For iOS: single <img> element swapping src from blob URLs
-  const iosSingleImgRef = useRef<HTMLImageElement>(null);
-  const iOSBlobUrlsIntroRef = useRef<string[]>([]);
-  const iOSBlobUrlsCampusRef = useRef<string[]>([]);
-
-  // For desktop: ImageBitmap cache
-  const introFramesRef = useRef<(ImageBitmap | HTMLImageElement)[]>([]);
-  const campusFramesRef = useRef<(ImageBitmap | HTMLImageElement)[]>([]);
-
+  const introFramesRef = useRef<HTMLImageElement[]>([]);
+  const campusFramesRef = useRef<HTMLImageElement[]>([]);
   const currentPhaseRef = useRef<'intro' | 'transition' | 'campus'>('intro');
   const activeTimelineIndexRef = useRef(-1);
   const lastProgressRef = useRef(0);
   const lastDrawnIntroRef = useRef(0);
   const lastDrawnCampusRef = useRef(0);
-  const lastShownSrcRef = useRef('');
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [activeTimelineIndex, setActiveTimelineIndex] = useState(-1);
-  
-  const isIOSRef = useRef(false);
+
   const isMobileRef = useRef(false);
 
   useEffect(() => {
@@ -94,23 +79,15 @@ export default function HeroScrub() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  /* ─── Desktop Canvas Draw Helpers ─── */
+  /* ─── Canvas Draw Helpers ─── */
   const drawImageToCanvas = useCallback(
-    (ctx: CanvasRenderingContext2D, frame: ImageBitmap | HTMLImageElement, cw: number, ch: number) => {
-      if (!frame) return;
-      let iw: number, ih: number;
-      if ('naturalWidth' in frame) {
-        if (!frame.complete || frame.naturalWidth === 0) return;
-        iw = frame.naturalWidth;
-        ih = frame.naturalHeight;
-      } else {
-        iw = frame.width;
-        ih = frame.height;
-      }
+    (ctx: CanvasRenderingContext2D, img: HTMLImageElement, cw: number, ch: number) => {
+      if (!img || !img.complete || img.naturalWidth === 0) return;
+      const { naturalWidth: iw, naturalHeight: ih } = img;
       const scale = Math.min(cw / iw, ch / ih);
       const dw = iw * scale;
       const dh = ih * scale;
-      ctx.drawImage(frame, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+      ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
     },
     []
   );
@@ -118,125 +95,86 @@ export default function HeroScrub() {
   const drawSafeFrame = useCallback(
     (
       ctx: CanvasRenderingContext2D,
-      frames: (ImageBitmap | HTMLImageElement)[],
+      frames: HTMLImageElement[],
       index: number,
       lastDrawnRef: React.MutableRefObject<number>,
-      cw: number, ch: number,
+      cw: number,
+      ch: number,
       alpha: number = 1
     ) => {
-      const frame = frames[index];
+      const img = frames[index];
       ctx.globalAlpha = alpha;
-      let isReady = false;
-      if (frame) {
-        isReady = 'naturalWidth' in frame ? (frame.complete && frame.naturalWidth > 0) : true;
-      }
-      if (isReady) {
-        drawImageToCanvas(ctx, frame, cw, ch);
+      if (img && img.complete && img.naturalWidth > 0) {
+        drawImageToCanvas(ctx, img, cw, ch);
         lastDrawnRef.current = index;
       } else {
         const fallback = frames[lastDrawnRef.current];
-        if (fallback) drawImageToCanvas(ctx, fallback, cw, ch);
+        if (fallback && fallback.complete) drawImageToCanvas(ctx, fallback, cw, ch);
       }
     },
     [drawImageToCanvas]
   );
 
-  /* ─── Unified Frame Renderer ─── */
+  /* ─── Unified Frame Renderer (single canvas for all devices) ─── */
   const drawFrame = useCallback(
     (progress: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const { width: cw, height: ch } = canvas;
+
       const introFrames = introFramesRef.current;
       const campusFrames = campusFramesRef.current;
-      const isIOS = isIOSRef.current;
-      
-      // For iOS, we use blob URL counts
-      const introLen = isIOS ? iOSBlobUrlsIntroRef.current.length : introFrames.length;
-      const campusLen = isIOS ? iOSBlobUrlsCampusRef.current.length : campusFrames.length;
-      
-      if (introLen === 0 || campusLen === 0) return;
+      if (introFrames.length === 0 || campusFrames.length === 0) return;
 
-      let iIdx = 0;
-      let cIdx = 0;
-      let showIntro = true;
-      let introAlpha = 1;
-      let campusAlpha = 0;
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.fillStyle = '#050506';
+      ctx.fillRect(0, 0, cw, ch);
 
       if (progress <= TRANSITION_START) {
         currentPhaseRef.current = 'intro';
-        const introProgress = Math.min(progress / INTRO_END, 1);
-        iIdx = Math.min(Math.floor(introProgress * introLen), introLen - 1);
-        showIntro = true;
+        const p = Math.min(progress / INTRO_END, 1);
+        const idx = Math.min(Math.floor(p * introFrames.length), introFrames.length - 1);
+        drawSafeFrame(ctx, introFrames, idx, lastDrawnIntroRef, cw, ch);
       } else if (progress >= TRANSITION_END) {
         currentPhaseRef.current = 'campus';
-        const campusProgress = Math.min((progress - CAMPUS_START) / (1 - CAMPUS_START), 1);
-        cIdx = Math.min(Math.floor(campusProgress * campusLen), campusLen - 1);
-        showIntro = false;
-        introAlpha = 0;
-        campusAlpha = 1;
+        const p = Math.min((progress - CAMPUS_START) / (1 - CAMPUS_START), 1);
+        const idx = Math.min(Math.floor(p * campusFrames.length), campusFrames.length - 1);
+        drawSafeFrame(ctx, campusFrames, idx, lastDrawnCampusRef, cw, ch);
       } else {
         currentPhaseRef.current = 'transition';
-        const introProgress = Math.min(progress / INTRO_END, 1);
-        const campusProgress = Math.max(0, (progress - CAMPUS_START) / (1 - CAMPUS_START));
-        const fadeProgress = (progress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
-        const fade = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
-        
-        iIdx = Math.min(Math.floor(introProgress * introLen), introLen - 1);
-        cIdx = Math.max(0, Math.min(Math.floor(campusProgress * campusLen), campusLen - 1));
-        introAlpha = 1 - fade;
-        campusAlpha = fade;
-        showIntro = fade < 0.5;
-      }
+        const ip = Math.min(progress / INTRO_END, 1);
+        const cp = Math.max(0, (progress - CAMPUS_START) / (1 - CAMPUS_START));
+        const fadeRaw = (progress - TRANSITION_START) / (TRANSITION_END - TRANSITION_START);
+        const fade = fadeRaw * fadeRaw * (3 - 2 * fadeRaw);
 
-      if (isIOS) {
-        // ─── iOS SINGLE-IMG STRATEGY ───
-        // Instead of multiple DOM elements or canvas (both crash/stall on iOS),
-        // we use a SINGLE <img> element and swap its .src to a blob: URL.
-        // The blob URL is already decoded in memory, so the swap is nearly instant.
-        // This uses the absolute minimum GPU memory (1 texture at a time).
-        const img = iosSingleImgRef.current;
-        if (!img) return;
-        
-        let targetSrc: string;
-        if (showIntro || currentPhaseRef.current === 'intro') {
-          targetSrc = iOSBlobUrlsIntroRef.current[iIdx] || '';
-        } else {
-          targetSrc = iOSBlobUrlsCampusRef.current[cIdx] || '';
-        }
-        
-        // Only update src when it actually changes to avoid redundant paints
-        if (targetSrc && targetSrc !== lastShownSrcRef.current) {
-          img.src = targetSrc;
-          lastShownSrcRef.current = targetSrc;
-        }
-      } else {
-        // ─── DESKTOP/ANDROID CANVAS STRATEGY ───
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const { width: cw, height: ch } = canvas;
-        
-        ctx.clearRect(0, 0, cw, ch);
-        ctx.fillStyle = '#050506';
-        ctx.fillRect(0, 0, cw, ch);
+        const iIdx = Math.min(Math.floor(ip * introFrames.length), introFrames.length - 1);
+        const cIdx = Math.max(0, Math.min(Math.floor(cp * campusFrames.length), campusFrames.length - 1));
 
-        if (introAlpha > 0) drawSafeFrame(ctx, introFrames, iIdx, lastDrawnIntroRef, cw, ch, introAlpha);
-        if (campusAlpha > 0) drawSafeFrame(ctx, campusFrames, cIdx, lastDrawnCampusRef, cw, ch, campusAlpha);
+        drawSafeFrame(ctx, introFrames, iIdx, lastDrawnIntroRef, cw, ch, 1 - fade);
+        drawSafeFrame(ctx, campusFrames, cIdx, lastDrawnCampusRef, cw, ch, fade);
         ctx.globalAlpha = 1;
       }
     },
     [drawSafeFrame]
   );
 
-  /* ─── Preloader ─── */
+  /* ─── Preloader: HTMLImageElement + .decode() for guaranteed bitmap caching ─── */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
     const isMobile = window.innerWidth < 768;
-    const isIOS = isIOSDevice();
     const lowEnd = isLowEndDevice();
-    
-    isIOSRef.current = isIOS;
     isMobileRef.current = isMobile;
+
+    // Enable normalizeScroll on mobile to eliminate iOS momentum scroll jank.
+    // This intercepts touch events and converts them to smooth, predictable
+    // scroll updates — bypassing iOS Safari's aggressive rAF throttling
+    // during momentum scrolling that causes the "stuck frame then jump" bug.
+    if (isMobile) {
+      ScrollTrigger.normalizeScroll(true);
+    }
 
     const introCount = (isMobile || lowEnd) ? MOBILE_INTRO_COUNT : INTRO_TOTAL;
     const campusCount = (isMobile || lowEnd) ? MOBILE_CAMPUS_COUNT : CAMPUS_TOTAL;
@@ -246,25 +184,17 @@ export default function HeroScrub() {
     const totalFrames = introCount + campusCount;
     let loadedCount = 0;
 
-    // Storage for blob URLs (iOS) or ImageBitmap/HTMLImageElement (desktop)
-    const iOSIntroBlobs: string[] = new Array(introCount).fill('');
-    const iOSCampusBlobs: string[] = new Array(campusCount).fill('');
-    const desktopIntroFrames: (ImageBitmap | HTMLImageElement)[] = new Array(introCount).fill(null);
-    const desktopCampusFrames: (ImageBitmap | HTMLImageElement)[] = new Array(campusCount).fill(null);
+    const loadedIntro: HTMLImageElement[] = new Array(introCount).fill(null);
+    const loadedCampus: HTMLImageElement[] = new Array(campusCount).fill(null);
 
     const onProgress = () => {
       loadedCount++;
       setLoadProgress(Math.min(100, Math.round((loadedCount / totalFrames) * 100)));
 
       if (loadedCount >= totalFrames) {
-        if (isIOS) {
-          iOSBlobUrlsIntroRef.current = iOSIntroBlobs;
-          iOSBlobUrlsCampusRef.current = iOSCampusBlobs;
-        } else {
-          introFramesRef.current = desktopIntroFrames;
-          campusFramesRef.current = desktopCampusFrames;
-        }
-        
+        introFramesRef.current = loadedIntro;
+        campusFramesRef.current = loadedCampus;
+
         setTimeout(() => {
           setIsLoaded(true);
           drawFrame(0);
@@ -272,65 +202,44 @@ export default function HeroScrub() {
       }
     };
 
-    const loadFrame = async (src: string, index: number, isIntro: boolean) => {
-      try {
-        const res = await fetch(src);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+    // Load image + force GPU decode using .decode()
+    // .decode() guarantees the browser has fully decompressed the image
+    // into its internal decoded bitmap cache BEFORE we ever try to draw it.
+    // This eliminates the "first-paint stall" that causes forward-scroll jank.
+    const loadAndDecode = async (src: string, target: HTMLImageElement[], index: number) => {
+      const img = new window.Image();
+      img.src = src;
 
-        if (isIOS) {
-          // iOS: Create a blob URL. The browser caches the decoded pixels
-          // associated with this URL. When we set img.src = blobURL,
-          // WebKit serves it from its internal cache with zero decode cost.
-          const blobUrl = URL.createObjectURL(blob);
-          if (isIntro) {
-            iOSIntroBlobs[index] = blobUrl;
-          } else {
-            iOSCampusBlobs[index] = blobUrl;
-          }
-          onProgress();
-        } else {
-          // Desktop/Android: Use ImageBitmap for direct GPU texture upload
-          try {
-            const bitmap = await createImageBitmap(blob);
-            if (isIntro) {
-              desktopIntroFrames[index] = bitmap;
-            } else {
-              desktopCampusFrames[index] = bitmap;
-            }
-            onProgress();
-          } catch {
-            // Fallback to HTMLImageElement
-            const img = new window.Image();
-            img.src = URL.createObjectURL(blob);
-            img.onload = () => {
-              if (isIntro) desktopIntroFrames[index] = img;
-              else desktopCampusFrames[index] = img;
-              onProgress();
-            };
-            img.onerror = () => onProgress();
-          }
-        }
+      try {
+        await img.decode(); // Forces full decode into browser bitmap cache
+        target[index] = img;
       } catch {
-        // Network error — count it so loading gate doesn't freeze forever
-        onProgress();
+        // If decode fails, try onload fallback
+        await new Promise<void>((resolve) => {
+          img.onload = () => {
+            target[index] = img;
+            resolve();
+          };
+          img.onerror = () => resolve();
+        });
       }
+      onProgress();
     };
 
     const loadAll = async () => {
       const queue: (() => Promise<void>)[] = [];
-      
+
       for (let i = 0; i < introCount; i++) {
         const frameNum = (isMobile || lowEnd) ? (i * introStep + 1) : (i + 1);
-        queue.push(() => loadFrame(getIntroFrameSrc(frameNum, isMobile), i, true));
+        queue.push(() => loadAndDecode(getIntroFrameSrc(frameNum, isMobile), loadedIntro, i));
       }
       for (let i = 0; i < campusCount; i++) {
         const frameNum = (isMobile || lowEnd) ? (i * campusStep + 1) : (i + 1);
-        queue.push(() => loadFrame(getCampusFrameSrc(frameNum, isMobile), i, false));
+        queue.push(() => loadAndDecode(getCampusFrameSrc(frameNum, isMobile), loadedCampus, i));
       }
 
-      // Load 6 at a time on iOS (less memory pressure), 10 on desktop
-      const BATCH_SIZE = isIOS ? 6 : 10;
+      // Smaller batches on mobile to prevent memory spikes
+      const BATCH_SIZE = isMobile ? 6 : 12;
       for (let i = 0; i < queue.length; i += BATCH_SIZE) {
         await Promise.all(queue.slice(i, i + BATCH_SIZE).map(t => t()));
       }
@@ -338,10 +247,10 @@ export default function HeroScrub() {
 
     loadAll();
 
-    // Cleanup blob URLs on unmount
     return () => {
-      iOSIntroBlobs.forEach(url => { if (url) URL.revokeObjectURL(url); });
-      iOSCampusBlobs.forEach(url => { if (url) URL.revokeObjectURL(url); });
+      if (isMobile) {
+        ScrollTrigger.normalizeScroll(false);
+      }
     };
   }, [prefersReducedMotion, drawFrame]);
 
@@ -351,30 +260,24 @@ export default function HeroScrub() {
 
     const container = containerRef.current;
     const sticky = stickyRef.current;
-    if (!container || !sticky) return;
+    const canvas = canvasRef.current;
+    if (!container || !sticky || !canvas) return;
 
-    const isIOS = isIOSRef.current;
+    const isMobile = isMobileRef.current;
 
-    // Only need canvas ref for non-iOS
-    if (!isIOS && !canvasRef.current) return;
-
-    const resizeView = () => {
-      if (!isIOS && canvasRef.current) {
-        const canvas = canvasRef.current;
-        const maxDpr = isMobileRef.current ? 1 : 2;
-        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        canvas.style.width = `${w}px`;
-        canvas.style.height = `${h}px`;
-      }
+    const resizeCanvas = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       drawFrame(lastProgressRef.current);
     };
-    
-    resizeView();
-    window.addEventListener('resize', resizeView, { passive: true });
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas, { passive: true });
 
     const timeline = content.heroOverlayTimeline;
 
@@ -423,7 +326,7 @@ export default function HeroScrub() {
 
     return () => {
       trigger.kill();
-      window.removeEventListener('resize', resizeView);
+      window.removeEventListener('resize', resizeCanvas);
     };
   }, [prefersReducedMotion, isLoaded, drawFrame]);
 
@@ -449,24 +352,13 @@ export default function HeroScrub() {
           <Image src="/images/hero-poster.jpg" alt="Loading..." fill className="object-contain md:object-cover blur-sm" priority />
         </div>
 
-        {/* Desktop/Android: Canvas renderer */}
+        {/* Single unified canvas for ALL devices */}
         <canvas
           ref={canvasRef}
           className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{ willChange: 'transform' }}
-        />
-        
-        {/* iOS: Single <img> element — the lightest possible approach.
-            Only ONE image is in GPU memory at any time. src is swapped to blob URLs. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={iosSingleImgRef}
-          alt=""
-          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-1000 pointer-events-none ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{ background: '#050506' }}
         />
 
-        {/* Glow overlay */}
+        {/* Golden glow overlay */}
         <div
           ref={glowRef}
           className="absolute inset-0 pointer-events-none z-[5]"
@@ -475,9 +367,11 @@ export default function HeroScrub() {
           <div
             className="absolute inset-0"
             style={{
-              background: `radial-gradient(ellipse 70% 50% at 50% 50%, rgba(212,175,122,0.22) 0%, transparent 60%),
+              background: `
+                radial-gradient(ellipse 70% 50% at 50% 50%, rgba(212,175,122,0.22) 0%, transparent 60%),
                 radial-gradient(ellipse 40% 35% at 30% 45%, rgba(212,175,122,0.12) 0%, transparent 50%),
-                radial-gradient(ellipse 40% 35% at 70% 55%, rgba(212,175,122,0.12) 0%, transparent 50%)`,
+                radial-gradient(ellipse 40% 35% at 70% 55%, rgba(212,175,122,0.12) 0%, transparent 50%)
+              `,
               mixBlendMode: 'screen',
               animation: 'glow-breathe 3s ease-in-out infinite',
             }}
@@ -499,7 +393,7 @@ export default function HeroScrub() {
           <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, rgba(212,175,122,0.08) 0%, transparent 30%, transparent 70%, rgba(212,175,122,0.06) 100%)' }} />
         </div>
 
-        {/* Gradient overlay for text readability */}
+        {/* Gradient overlay */}
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#050506]/40 via-transparent to-[#050506]/60" />
 
         {/* Text overlay */}
