@@ -47,7 +47,8 @@ class FrameManager {
   private onProgressUpdate: ((loaded: number, total: number) => void) | null = null;
   private onFrameLoaded: ((index: number) => void) | null = null;
   private totalLoaded = 0;
-  private lastEnsuredIndex = -1;
+  private currentIndex = 0;
+  private loopRunning = false;
 
   constructor(
     srcs: string[],
@@ -91,52 +92,67 @@ class FrameManager {
     this.onFirstWindowReady?.();
   }
 
-  /** Continue loading remaining frames in the background, prioritizing around currentIndex */
-  async preloadRemaining(startFrom: number = 0): Promise<void> {
-    // Load frames in order from startFrom, respecting concurrency
-    const batch: Promise<void>[] = [];
-    for (let i = 0; i < this.srcs.length; i++) {
-      if (this.paused) break;
-      const idx = (startFrom + i) % this.srcs.length;
-      if (this.frames[idx] !== null) continue; // Already loaded
-      batch.push(this.loadFrame(idx));
-      if (batch.length >= this.config.batchConcurrency) {
-        await Promise.all(batch);
-        batch.length = 0;
-        // Yield to main thread between batches
-        await new Promise<void>(r => setTimeout(r, 0));
-      }
-    }
-    if (batch.length > 0) await Promise.all(batch);
+  /** Start the intelligent sliding window background loader */
+  startBackgroundLoop(): void {
+    if (this.loopRunning) return;
+    this.loopRunning = true;
+    this.paused = false;
+    this.backgroundLoop(); // Fire and forget
   }
 
-  /** Ensure frames around the given index are loaded, evict distant ones on MEDIUM/LOW */
-  ensureWindow(currentIndex: number): void {
-    // Throttle: skip if the requested index hasn't changed
-    if (currentIndex === this.lastEnsuredIndex) return;
-    this.lastEnsuredIndex = currentIndex;
+  private async backgroundLoop(): Promise<void> {
+    while (!this.paused) {
+      const ahead = this.config.windowSize;
+      const behind = Math.floor(this.config.windowSize / 4);
+      
+      const lo = Math.max(0, this.currentIndex - behind);
+      const hi = Math.min(this.srcs.length - 1, this.currentIndex + ahead);
 
-    if (this.config.windowSize >= this.srcs.length) return; // HIGH tier: keep everything
-
-    const half = Math.floor(this.config.windowSize / 2);
-    const lo = Math.max(0, currentIndex - half);
-    const hi = Math.min(this.srcs.length - 1, currentIndex + half);
-
-    // Evict frames far outside the window
-    for (let i = 0; i < this.srcs.length; i++) {
-      if (i < lo - half || i > hi + half) {
-        if (this.frames[i] !== null) {
-          this.frames[i] = null; // Let GC reclaim
+      // 1. Evict frames safely OUTSIDE the window
+      if (this.config.windowSize < this.srcs.length) {
+        for (let i = 0; i < this.srcs.length; i++) {
+          if (i < lo || i > hi) {
+            if (this.frames[i] !== null) {
+              this.frames[i] = null; // Let GC reclaim
+            }
+          }
         }
       }
-    }
 
-    // Request any missing frames within the window (don't block on them)
-    for (let i = lo; i <= hi; i++) {
-      if (this.frames[i] === null && !this.loading.has(i)) {
-        this.loadFrame(i); // Fire-and-forget — will trigger onFrameLoaded → repaint
+      // 2. Find missing frames WITHIN the window
+      const missing: number[] = [];
+      const fetchHi = this.config.windowSize >= this.srcs.length ? this.srcs.length - 1 : hi;
+      const fetchLo = this.config.windowSize >= this.srcs.length ? 0 : lo;
+
+      // Prioritize from currentIndex forwards, then backwards
+      for (let i = this.currentIndex; i <= fetchHi; i++) {
+        if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
       }
+      for (let i = this.currentIndex - 1; i >= fetchLo; i--) {
+        if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
+      }
+
+      // 3. Sleep if buffer is full
+      if (missing.length === 0) {
+        await new Promise(r => setTimeout(r, 50));
+        continue;
+      }
+
+      // 4. Download a batch respecting concurrency limits
+      const batchSize = Math.min(this.config.batchConcurrency, missing.length);
+      const batch = missing.slice(0, batchSize).map(idx => this.loadFrame(idx));
+      
+      await Promise.all(batch);
+      
+      // Small yield to main thread
+      await new Promise(r => setTimeout(r, 0));
     }
+    this.loopRunning = false;
+  }
+
+  /** Update the current index for the background loop to follow */
+  ensureWindow(currentIndex: number): void {
+    this.currentIndex = currentIndex;
   }
 
   /** Load a single frame */
@@ -403,10 +419,10 @@ export default function HeroScrub() {
       // Small delay to let React paint the unlocked state before we resume heavy work
       await new Promise<void>(r => setTimeout(r, 200));
 
-      // Stream: load remaining frames in background sequentially (no network contention!)
-      await unifiedMgr.preloadRemaining(config.gateFrameCount);
+      // Stream: intelligent sliding window background loader
+      unifiedMgr.startBackgroundLoop();
 
-      debugLog('All frames loaded');
+      debugLog('Sliding window buffer started');
     };
 
     loadPipeline();

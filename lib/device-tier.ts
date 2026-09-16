@@ -120,7 +120,7 @@ export function getTierConfig(tier?: DeviceTier): TierConfig {
         batchConcurrency: 12,
         canvasDprCap: 2,
         useOffscreenCache: false,
-        windowSize: 180, // Large window
+        windowSize: 330, // Large window to hold all frames
         gateFrameCount: 30,
       };
     case 'MEDIUM':
