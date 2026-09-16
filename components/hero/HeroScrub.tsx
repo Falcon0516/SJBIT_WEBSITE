@@ -32,8 +32,8 @@ function getUnifiedFrameSrc(index: number, isMobile: boolean): string {
     : `/frames/unified/frame-${pad}.webp`;
 }
 
-/* ─── Frame type (offscreen canvas, image, or bitmap) ─── */
-type FrameData = HTMLCanvasElement | HTMLImageElement | ImageBitmap | null;
+/* ─── Frame type (offscreen canvas or image) ─── */
+type FrameData = HTMLCanvasElement | HTMLImageElement | null;
 
 /* ─── Rolling Window Frame Manager ─── */
 class FrameManager {
@@ -171,18 +171,23 @@ class FrameManager {
         img.onerror = () => reject(new Error(`Failed to load ${this.srcs[index]}`));
       });
 
-      // Try decode for guaranteed bitmap caching
-      if (this.config.useOffscreenCache && this.isMobile && typeof window.createImageBitmap === 'function') {
-        try {
-          const bmp = await window.createImageBitmap(img);
-          this.frames[index] = bmp;
-        } catch {
-          // Fallback if createImageBitmap fails
-          try { await img.decode(); } catch {}
+      // Decode on background thread first
+      try { await img.decode(); } catch {}
+
+      if (this.config.useOffscreenCache && this.isMobile) {
+        // Bake into offscreen canvas to prevent iOS WebKit eviction.
+        // Since img.decode() already completed, drawImage is instant and won't block the main thread.
+        const offscreen = document.createElement('canvas');
+        offscreen.width = img.naturalWidth;
+        offscreen.height = img.naturalHeight;
+        const oCtx = offscreen.getContext('2d');
+        if (oCtx) {
+          oCtx.drawImage(img, 0, 0);
+          this.frames[index] = offscreen;
+        } else {
           this.frames[index] = img;
         }
       } else {
-        try { await img.decode(); } catch {}
         this.frames[index] = img;
       }
 
