@@ -48,7 +48,7 @@ class FrameManager {
   private onFrameLoaded: ((index: number) => void) | null = null;
   private totalLoaded = 0;
   private currentIndex = 0;
-  private loopRunning = false;
+  private activeFetches = 0;
 
   constructor(
     srcs: string[],
@@ -92,67 +92,61 @@ class FrameManager {
     this.onFirstWindowReady?.();
   }
 
-  /** Start the intelligent sliding window background loader */
-  startBackgroundLoop(): void {
-    if (this.loopRunning) return;
-    this.loopRunning = true;
+  /** Start the event-driven sliding window loader */
+  startQueue(): void {
     this.paused = false;
-    this.backgroundLoop(); // Fire and forget
+    this.checkQueue();
   }
 
-  private async backgroundLoop(): Promise<void> {
-    while (!this.paused) {
-      const ahead = this.config.windowSize;
-      const behind = Math.floor(this.config.windowSize / 4);
-      
-      const lo = Math.max(0, this.currentIndex - behind);
-      const hi = Math.min(this.srcs.length - 1, this.currentIndex + ahead);
+  private checkQueue(): void {
+    if (this.paused) return;
 
-      // 1. Evict frames safely OUTSIDE the window
-      if (this.config.windowSize < this.srcs.length) {
-        for (let i = 0; i < this.srcs.length; i++) {
-          if (i < lo || i > hi) {
-            if (this.frames[i] !== null) {
-              this.frames[i] = null; // Let GC reclaim
-            }
+    const ahead = this.config.windowSize;
+    const behind = Math.floor(this.config.windowSize / 4);
+    
+    const lo = Math.max(0, this.currentIndex - behind);
+    const hi = Math.min(this.srcs.length - 1, this.currentIndex + ahead);
+
+    // 1. Evict frames safely OUTSIDE the window
+    if (this.config.windowSize < this.srcs.length) {
+      for (let i = 0; i < this.srcs.length; i++) {
+        if (i < lo || i > hi) {
+          if (this.frames[i] !== null) {
+            this.frames[i] = null; // Let GC reclaim
           }
         }
       }
-
-      // 2. Find missing frames WITHIN the window
-      const missing: number[] = [];
-      const fetchHi = this.config.windowSize >= this.srcs.length ? this.srcs.length - 1 : hi;
-      const fetchLo = this.config.windowSize >= this.srcs.length ? 0 : lo;
-
-      // Prioritize from currentIndex forwards, then backwards
-      for (let i = this.currentIndex; i <= fetchHi; i++) {
-        if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
-      }
-      for (let i = this.currentIndex - 1; i >= fetchLo; i--) {
-        if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
-      }
-
-      // 3. Sleep if buffer is full
-      if (missing.length === 0) {
-        await new Promise(r => setTimeout(r, 50));
-        continue;
-      }
-
-      // 4. Download a batch respecting concurrency limits
-      const batchSize = Math.min(this.config.batchConcurrency, missing.length);
-      const batch = missing.slice(0, batchSize).map(idx => this.loadFrame(idx));
-      
-      await Promise.all(batch);
-      
-      // Small yield to main thread
-      await new Promise(r => setTimeout(r, 0));
     }
-    this.loopRunning = false;
+
+    // 2. Find missing frames WITHIN the window
+    const missing: number[] = [];
+    const fetchHi = this.config.windowSize >= this.srcs.length ? this.srcs.length - 1 : hi;
+    const fetchLo = this.config.windowSize >= this.srcs.length ? 0 : lo;
+
+    // Prioritize from currentIndex forwards, then backwards
+    for (let i = this.currentIndex; i <= fetchHi; i++) {
+      if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
+    }
+    for (let i = this.currentIndex - 1; i >= fetchLo; i--) {
+      if (this.frames[i] === null && !this.loading.has(i)) missing.push(i);
+    }
+
+    // 3. Start fetches until we hit concurrency limit
+    while (this.activeFetches < this.config.batchConcurrency && missing.length > 0) {
+      const idx = missing.shift()!;
+      this.activeFetches++;
+      this.loadFrame(idx).finally(() => {
+        this.activeFetches--;
+        this.checkQueue(); // Instantly trigger next fetch when one finishes
+      });
+    }
   }
 
   /** Update the current index for the background loop to follow */
   ensureWindow(currentIndex: number): void {
+    if (this.currentIndex === currentIndex) return;
     this.currentIndex = currentIndex;
+    this.checkQueue();
   }
 
   /** Load a single frame */
@@ -425,9 +419,9 @@ export default function HeroScrub() {
       await new Promise<void>(r => setTimeout(r, 200));
 
       // Stream: intelligent sliding window background loader
-      unifiedMgr.startBackgroundLoop();
+      unifiedMgr.startQueue();
 
-      debugLog('Sliding window buffer started');
+      debugLog('Sliding window queue started');
     };
 
     loadPipeline();
